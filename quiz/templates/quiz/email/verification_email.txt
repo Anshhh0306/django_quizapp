@@ -1,0 +1,12 @@
+Dear SRMIST Student,
+
+Welcome to our Quiz Platform! Please verify your email address by clicking the link below:
+
+{{ verification_url }}
+
+This link will expire in 24 hours for security reasons.
+
+If you didn't register for our Quiz Platform, please ignore this email.
+
+Best regards,
+Quiz Platform Team

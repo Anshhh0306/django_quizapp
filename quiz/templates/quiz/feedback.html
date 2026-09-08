@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="feedback-container">
+  <h3>Feedback</h3>
+  
+  <div class="question-section">
+    <h4>Question:</h4>
+    <p>{{ question.text }}</p>
+  </div>
+
+  <div class="response-section">
+    {% if timed_out %}
+      <p class="timeout-message">⏰ Time's up! You didn't answer in time.</p>
+    {% else %}
+      <p><strong>Your answer:</strong> {{ choice.text }}</p>
+      {% if time_taken %}
+        <p class="time-info">Time taken: {{ time_taken }} seconds</p>
+      {% endif %}
+    {% endif %}
+
+    {% if correct %}
+      <p class="correct-message">✅ {{ message }}</p>
+    {% else %}
+      <p class="incorrect-message">❌ {{ message }}</p>
+      <div class="correct-answer">
+        <p><strong>Correct answer:</strong> {{ correct_choice.text }}</p>
+        {% if explanation %}
+          <div class="explanation">
+            <p><strong>Explanation:</strong></p>
+            <p>{{ explanation }}</p>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="navigation">
+    {% if is_last %}
+      <a href="{% url 'result' %}" class="btn next-btn">See Final Result</a>
+    {% else %}
+      <a href="{% url 'question' %}" class="btn next-btn">Next Question</a>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .feedback-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .question-section {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .response-section {
+    margin-bottom: 30px;
+  }
+
+  .timeout-message {
+    color: #856404;
+    background-color: #fff3cd;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+  }
+
+  .time-info {
+    color: #666;
+    font-style: italic;
+    margin: 10px 0;
+  }
+
+  .correct-message {
+    color: #155724;
+    background-color: #d4edda;
+    padding: 10px;
+    border-radius: 4px;
+    margin: 10px 0;
+  }
+
+  .incorrect-message {
+    color: #721c24;
+    background-color: #f8d7da;
+    padding: 10px;
+    border-radius: 4px;
+    margin: 10px 0;
+  }
+
+  .correct-answer {
+    margin: 15px 0;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+  }
+
+  .explanation {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+  }
+
+  .navigation {
+    margin-top: 20px;
+    text-align: center;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    transition: background-color 0.3s;
+  }
+
+  .btn:hover {
+    background-color: #0056b3;
+    text-decoration: none;
+    color: white;
+  }
+
+  .next-btn {
+    font-size: 1.1em;
+    min-width: 200px;
+  }
+</style>
+{% endblock %}

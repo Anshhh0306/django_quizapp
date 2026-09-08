@@ -1,0 +1,32 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block content %}
+    {{ block.super }}
+    {% if original %}
+        <div style="margin-top: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 4px;">
+            <h3>User Management Actions</h3>
+            {% if original.is_active %}
+                <form method="post" action="{% url 'admin:deactivate_user' original.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="button" style="background-color: #dc3545; color: white;">
+                        Deactivate User
+                    </button>
+                </form>
+            {% else %}
+                <form method="post" action="{% url 'admin:activate_user' original.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="button" style="background-color: #28a745; color: white;">
+                        Activate User
+                    </button>
+                </form>
+            {% endif %}
+            <form method="post" action="{% url 'admin:reset_user_password' original.pk %}" style="margin-top: 10px;">
+                {% csrf_token %}
+                <button type="submit" class="button" style="background-color: #007bff; color: white;">
+                    Reset Password
+                </button>
+            </form>
+        </div>
+    {% endif %}
+{% endblock %}

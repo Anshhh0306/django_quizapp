@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <div class="anti-cheat-warning-page">
+        <h1>🔒 Anti-Cheat Mode</h1>
+        
+        <div class="warning-box">
+            <h2>⚠️ Important Notice</h2>
+            <p>You are about to enter an anti-cheat protected quiz. Please read the following carefully:</p>
+            
+            <div class="rules-list">
+                <div class="rule-item">
+                    <span class="rule-icon">🖥️</span>
+                    <strong>Fullscreen Mode:</strong> The quiz will automatically enter fullscreen mode and you cannot exit until completion.
+                </div>
+                
+                <div class="rule-item">
+                    <span class="rule-icon">🚫</span>
+                    <strong>No Tab Switching:</strong> Switching tabs, opening other applications, or minimizing the browser will trigger a violation.
+                </div>
+                
+                <div class="rule-item">
+                    <span class="rule-icon">🔍</span>
+                    <strong>No Developer Tools:</strong> Right-clicking, developer tools, and inspection are disabled.
+                </div>
+                
+                <div class="rule-item">
+                    <span class="rule-icon">⏰</span>
+                    <strong>Early Submission:</strong> Any violation will automatically submit your quiz with current progress.
+                </div>
+                
+                <div class="rule-item">
+                    <span class="rule-icon">📝</span>
+                    <strong>One Attempt:</strong> Once started, you cannot retake the quiz for this category.
+                </div>
+            </div>
+            
+            <div class="quiz-info">
+                <h3>Quiz Details:</h3>
+                <p><strong>Category:</strong> {{ category.name }}</p>
+                <p><strong>Questions:</strong> custom</p>
+                <p><strong>Time per Question:</strong> custom</p>
+            </div>
+            
+            <div class="action-buttons">
+                <a href="{% url 'home' %}" class="btn btn-secondary">Go Back</a>
+                <a href="{% url 'start_quiz' category.id %}" class="btn btn-danger">
+                    I Understand - Start Quiz
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .anti-cheat-warning-page {
+        max-width: 700px;
+        margin: 2rem auto;
+        padding: 2rem;
+    }
+
+    .warning-box {
+        background: white;
+        border-radius: 15px;
+        padding: 2rem;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        border-left: 5px solid #dc3545;
+    }
+
+    .warning-box h2 {
+        color: #dc3545;
+        margin-bottom: 1rem;
+    }
+
+    .rules-list {
+        margin: 2rem 0;
+    }
+
+    .rule-item {
+        display: flex;
+        align-items: flex-start;
+        margin: 1rem 0;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 10px;
+        border-left: 3px solid #6c63ff;
+    }
+
+    .rule-icon {
+        font-size: 1.5rem;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+
+    .quiz-info {
+        background: #e3f2fd;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 2rem 0;
+    }
+
+    .quiz-info h3 {
+        color: #1976d2;
+        margin-bottom: 1rem;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        margin-top: 2rem;
+    }
+
+    .btn {
+        padding: 1rem 2rem;
+        border-radius: 25px;
+        text-decoration: none;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+    }
+
+    .btn-secondary {
+        background: #6c757d;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #5a6268;
+    }
+
+    .btn-danger {
+        background: #dc3545;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #c82333;
+    }
+</style>
+{% endblock %}

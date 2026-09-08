@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <div class="auth-form-container">
+        <h2>Welcome Back!</h2>
+        <p>Login to continue your learning journey</p>
+
+        <form method="post" class="simple-form">
+            {% csrf_token %}
+            {% for error in form.non_field_errors %}
+                <div class="error">{{ error }}</div>
+            {% endfor %}
+
+            <div class="form-field">
+                <label for="{{ form.username.id_for_label }}">Username</label>
+                {{ form.username }}
+                {% if form.username.errors %}
+                    <div class="error">{{ form.username.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="form-field">
+                <label for="{{ form.password.id_for_label }}">Password</label>
+                <div class="password-field">
+                    {{ form.password }}
+                    <button type="button" class="password-toggle" onclick="togglePasswordVisibility(this)">👁️</button>
+                </div>
+                {% if form.password.errors %}
+                    <div class="error">{{ form.password.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="form-footer">
+                <a href="{% url 'password_reset' %}" class="forgot-password">Forgot Password?</a>
+            </div>
+
+            <button type="submit" class="btn btn-create">Login</button>
+        </form>
+
+        <p class="auth-link">
+            Don't have an account? <a href="{% url 'register' %}">Create Account</a>
+        </p>
+    </div>
+</div>
+
+<script>
+    function togglePasswordVisibility(button) {
+        const passwordInput = button.parentElement.querySelector('input');
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            button.textContent = '🔒';
+        } else {
+            passwordInput.type = 'password';
+            button.textContent = '👁️';
+        }
+    }
+</script>
+{% endblock %}

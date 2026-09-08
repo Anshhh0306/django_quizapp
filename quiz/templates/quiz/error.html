@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="error-container">
+    <h1>Oops!</h1>
+    <p>{{ message }}</p>
+    <a href="{% url 'home' %}" class="btn">Back to Categories</a>
+  </div>
+{% endblock %}
