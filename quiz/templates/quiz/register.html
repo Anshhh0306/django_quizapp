@@ -8,19 +8,12 @@
         <form method="post" class="simple-form">
             {% csrf_token %}
             <div class="form-field">
-                <label for="{{ form.username.id_for_label }}">Username</label>
-                {{ form.username }}
-                {% if form.username.errors %}
-                    <div class="error">{{ form.username.errors.0 }}</div>
-                {% endif %}
-            </div>
-
-            <div class="form-field">
                 <label for="{{ form.email.id_for_label }}">Email</label>
                 {{ form.email }}
                 {% if form.email.errors %}
                     <div class="error">{{ form.email.errors.0 }}</div>
                 {% endif %}
+                <small class="help-text">{{ form.email.help_text }}</small>
             </div>
 
             <div class="form-field">

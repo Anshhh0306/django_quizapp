@@ -1,6 +1,8 @@
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from .roles import TEACHERS_GROUP, is_student, role_of
 from django.urls import path
 from django.http import HttpResponseRedirect
 from django.core.mail import send_mail
@@ -11,11 +13,28 @@ import string
 User = get_user_model()
 
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'is_active', 'date_joined', 'last_login', 'is_staff')
-    list_filter = ('is_active', 'is_staff', 'date_joined')
+    list_display = ('username', 'email', 'role', 'is_active', 'date_joined', 'last_login', 'is_staff')
+    list_filter = ('is_active', 'is_staff', 'groups', 'date_joined')
+    actions = ['approve_teachers']
     search_fields = ('username', 'email')
     ordering = ('-date_joined',)
     
+    @admin.display(description='Role')
+    def role(self, obj):
+        return role_of(obj)
+
+    @admin.action(description='Approve selected users as teachers')
+    def approve_teachers(self, request, queryset):
+        group, _ = Group.objects.get_or_create(name=TEACHERS_GROUP)
+        approved = 0
+        for user in queryset:
+            if is_student(user):
+                self.message_user(request, f'{user.username} has a student email; skipped.', level=messages.WARNING)
+            else:
+                user.groups.add(group)
+                approved += 1
+        self.message_user(request, f'{approved} user(s) approved as teachers.')
+
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
