@@ -145,7 +145,7 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Session expires when browser closes
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'  # USE_TZ stays on: DB keeps UTC, pages show IST
 
 USE_I18N = True
 
@@ -163,6 +163,9 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Verification and password-reset links expire after 24 hours (the emails say so)
+PASSWORD_RESET_TIMEOUT = 24 * 60 * 60
 
 # Login redirects
 LOGIN_REDIRECT_URL = '/'

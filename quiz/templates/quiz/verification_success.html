@@ -5,6 +5,9 @@
     <div class="success-icon">✓</div>
     <h2>Email Verified Successfully!</h2>
     <p>Your SRMIST email address has been verified. You can now log in to your account.</p>
+    {% if pending_teacher %}
+    <p>Staff accounts must be approved by an administrator before you can create exams.</p>
+    {% endif %}
     <div class="action-buttons">
         <a href="{% url 'login' %}" class="login-btn">Log In</a>
     </div>

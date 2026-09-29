@@ -6,6 +6,8 @@ from django.contrib.auth.models import User
 from .models import Question, Choice, UserQuiz, Category, UserAnswer
 from .forms import RegisterForm
 from .ratelimit import rate_limit
+from .roles import is_student, role_of
+from functools import wraps
 from django.contrib.auth import login as auth_login
 from django.db.models import Count, Avg
 from .models import UserStatistics
@@ -31,6 +33,7 @@ def _send_verification_email(request, user):
     message = render_to_string('quiz/email/verification_email.txt', {
         'user': user,
         'verification_url': verification_url,
+        'is_staff_account': not is_student(user),
     })
     send_mail(
         'Verify your SRMIST email address',
@@ -62,7 +65,8 @@ def verify_email(request, uidb64, token):
     if user is not None and email_verification_token.check_token(user, token):
         user.is_active = True
         user.save()
-        return render(request, 'quiz/verification_success.html')
+        return render(request, 'quiz/verification_success.html',
+                      {'pending_teacher': not is_student(user)})
     else:
         return render(request, 'quiz/verification_failed.html')
 
@@ -75,9 +79,20 @@ def resend_verification(request):
             return render(request, 'quiz/verification_sent.html', {'email': user.email})
     return redirect('register')
 
+def student_required(view):
+    """Only students take quizzes; everyone else is sent home (which explains their role)."""
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if not is_student(request.user):
+            return redirect('home')
+        return view(request, *args, **kwargs)
+    return login_required(wrapper)
+
 def home(request):
     context = {}
     if request.user.is_authenticated:
+        context['role'] = role_of(request.user)
+    if context.get('role') == 'student':
         categories = Category.objects.all()
         # Add user progress for each category
         for category in categories:
@@ -91,7 +106,7 @@ def home(request):
         context['categories'] = categories
     return render(request, 'quiz/home.html', context)
 
-@login_required
+@student_required
 def anti_cheat_warning(request, category_id):
     """Show anti-cheat warning before starting quiz"""
     category = get_object_or_404(Category, pk=category_id)
@@ -135,7 +150,7 @@ def _record_answer(userquiz, question, choice, elapsed):
     userquiz.save()
     return correct
 
-@login_required
+@student_required
 def start_quiz(request, category_id):
     category = get_object_or_404(Category, pk=category_id)
     userquiz, _ = UserQuiz.objects.get_or_create(user=request.user, category=category)
@@ -155,7 +170,7 @@ def start_quiz(request, category_id):
     request.session['category_id'] = category_id
     return redirect('question')
 
-@login_required
+@student_required
 def question_view(request):
     category_id = request.session.get('category_id')
     if not category_id:
@@ -518,10 +533,10 @@ def custom_password_reset(request):
             
             # Check if user exists and has SRMIST email
             try:
-                user = User.objects.get(email=email)
+                user = User.objects.get(email__iexact=email)
                 
                 # Verify it's a SRMIST email
-                if not email.endswith('@srmist.edu.in'):
+                if not email.lower().endswith('@srmist.edu.in'):
                     return render(request, 'quiz/password_reset.html', {
                         'form': form,
                         'error': 'Password reset is only available for SRMIST email addresses (@srmist.edu.in)'

@@ -12,7 +12,7 @@
             {% endfor %}
 
             <div class="form-field">
-                <label for="{{ form.username.id_for_label }}">Username</label>
+                <label for="{{ form.username.id_for_label }}">Register number or email</label>
                 {{ form.username }}
                 {% if form.username.errors %}
                     <div class="error">{{ form.username.errors.0 }}</div>

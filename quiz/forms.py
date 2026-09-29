@@ -1,21 +1,26 @@
 from django import forms
 from django.contrib.auth.models import User
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.core.exceptions import ValidationError
+from .roles import STUDENT_RE, STAFF_RE
 
 class RegisterForm(UserCreationForm):
     email = forms.EmailField(required=True)
 
     class Meta:
         model = User
-        fields = ("username", "email", "password1", "password2")
+        fields = ("email", "password1", "password2")
 
     def clean_email(self):
-        email = self.cleaned_data.get('email').lower()
-        if not email.endswith('@srmist.edu.in'):
-            raise ValidationError("Please use your SRMIST email address (@srmist.edu.in)")
-        if User.objects.filter(email__iexact=email).exists():
+        email = self.cleaned_data['email'].strip().lower()
+        if not (STUDENT_RE.match(email) or STAFF_RE.match(email)):
+            raise ValidationError(
+                "Use your SRMIST email: students like AD3919@srmist.edu.in, staff like name@srmist.edu.in")
+        username = email.split('@')[0]
+        if (User.objects.filter(email__iexact=email).exists()
+                or User.objects.filter(username__iexact=username).exists()):
             raise ValidationError("This email address is already registered.")
+        self.instance.username = username  # login name = the part before the @
         return email
 
     def save(self, commit=True):
@@ -28,6 +33,15 @@ class RegisterForm(UserCreationForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['email'].help_text = "Use your SRMIST email address (@srmist.edu.in)"
+        self.fields['email'].help_text = "Students: AD3919@srmist.edu.in. Staff: name@srmist.edu.in (needs admin approval)."
         self.fields['password1'].help_text = "Choose a secure password with at least 8 characters"
-        self.fields['username'].help_text = "Choose your preferred username"
+
+
+class LoginForm(AuthenticationForm):
+    """Log in with username or email, in any letter case (AD3919, ad3919, ad3919@srmist.edu.in)."""
+
+    def clean_username(self):
+        name = self.cleaned_data['username'].strip()
+        user = (User.objects.filter(username__iexact=name).first()
+                or User.objects.filter(email__iexact=name).first())
+        return user.username if user else name

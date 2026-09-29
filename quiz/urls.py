@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .forms import LoginForm
 from django.contrib.auth import views as auth_views
 
 urlpatterns = [
@@ -7,7 +8,7 @@ urlpatterns = [
     path('register/', views.register, name='register'),
     path('verify/<str:uidb64>/<str:token>/', views.verify_email, name='verify_email'),
     path('resend-verification/', views.resend_verification, name='resend_verification'),
-    path('accounts/login/', auth_views.LoginView.as_view(template_name='quiz/login.html'), name='login'),
+    path('accounts/login/', auth_views.LoginView.as_view(template_name='quiz/login.html', authentication_form=LoginForm), name='login'),
     path('accounts/logout/', auth_views.LogoutView.as_view(next_page='/'), name='logout'),
     
     # Custom Password reset URLs using SRMIST verification

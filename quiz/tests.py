@@ -89,7 +89,7 @@ class ViewTests(TestCase):
         self.client = Client()
         self.user = User.objects.create_user(
             username='student1',
-            email='student1@srmist.edu.in',
+            email='ab1234@srmist.edu.in',
             password='TestPassword123!'
         )
         self.category = Category.objects.create(
@@ -223,7 +223,7 @@ class QuizFlowTests(TestCase):
 
     def setUp(self):
         cache.clear()  # rate-limit counters live in the cache
-        self.user = User.objects.create_user('s1', 's1@srmist.edu.in', 'TestPassword123!')
+        self.user = User.objects.create_user('s1', 'ab1234@srmist.edu.in', 'TestPassword123!')
         self.client.login(username='s1', password='TestPassword123!')
         self.cat = self._category('Python', 2)
         self.other = self._category('Django', 2)
@@ -329,7 +329,7 @@ class QuizFlowTests(TestCase):
 
     def test_email_uniqueness_is_case_insensitive(self):
         from quiz.forms import RegisterForm
-        form = RegisterForm({'username': 'x', 'email': 'S1@SRMIST.EDU.IN',
+        form = RegisterForm({'username': 'x', 'email': 'AB1234@SRMIST.EDU.IN',
                              'password1': 'TestPassword123!', 'password2': 'TestPassword123!'})
         self.assertFalse(form.is_valid())
 

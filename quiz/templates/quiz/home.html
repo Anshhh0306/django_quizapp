@@ -19,6 +19,22 @@
       </div>
     </div>
   {% else %}
+    {% if role == 'pending' %}
+    <div class="dashboard">
+      <h2>Awaiting approval</h2>
+      <p>Your staff account is verified. An administrator must approve it before you can use teacher features.</p>
+    </div>
+    {% elif role == 'teacher' %}
+    <div class="dashboard">
+      <h2>Welcome, {{ user.username }}</h2>
+      <p>Your teacher account is approved. Exam tools are coming soon.</p>
+    </div>
+    {% elif role == 'admin' %}
+    <div class="dashboard">
+      <h2>Administrator</h2>
+      <p>Manage users and teacher approvals in the <a href="/admin/">admin site</a>.</p>
+    </div>
+    {% else %}
     <div class="dashboard">
       <p>Choose of category and embark your learning journey!</p>
 
@@ -51,6 +67,7 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
   {% endif %}
 </div>
 {% endblock %}
