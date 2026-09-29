@@ -145,7 +145,7 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Session expires when browser closes
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'  # USE_TZ stays on: DB keeps UTC, pages show IST
 
 USE_I18N = True
 
