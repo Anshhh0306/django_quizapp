@@ -38,6 +38,10 @@ class UserQuiz(models.Model):
     total_points = models.IntegerField(default=0)
     taken_on = models.DateTimeField(null=True, blank=True)
     average_time_per_question = models.FloatField(default=0)
+    # In-progress state lives here (not in the session) so restarting can't reset it
+    question_ids = models.JSONField(default=list, blank=True)
+    current_index = models.IntegerField(default=0)
+    question_started_at = models.DateTimeField(null=True, blank=True)  # server-side timer
 
     class Meta:
         unique_together = ['user', 'category']

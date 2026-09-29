@@ -3,6 +3,8 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.core.management import call_command
 from django.utils import timezone
+from django.core import mail
+from django.core.cache import cache
 from quiz.models import Category, Question, Choice, UserQuiz, UserAnswer, UserStatistics
 
 
@@ -131,10 +133,10 @@ class ViewTests(TestCase):
         self.assertRedirects(response, reverse('question'))
 
         # Check session initialization
-        session = self.client.session
-        self.assertEqual(session['category_id'], self.category.id)
-        self.assertEqual(session['quiz_idx'], 0)
-        self.assertIn(self.question.id, session['quiz_qs'])
+        self.assertEqual(self.client.session['category_id'], self.category.id)
+        userquiz = UserQuiz.objects.get(user=self.user, category=self.category)
+        self.assertEqual(userquiz.current_index, 0)
+        self.assertIn(self.question.id, userquiz.question_ids)
 
     def test_question_view_and_answer_submission(self):
         self.client.login(username='student1', password='TestPassword123!')
@@ -214,3 +216,143 @@ class ManagementCommandTests(TestCase):
         call_command('clear_users')
         self.assertFalse(User.objects.filter(username='dummy').exists())
         self.assertTrue(User.objects.filter(username='super').exists())
+
+
+class QuizFlowTests(TestCase):
+    """Regression tests for the restart / timer / result / reset-token holes."""
+
+    def setUp(self):
+        cache.clear()  # rate-limit counters live in the cache
+        self.user = User.objects.create_user('s1', 's1@srmist.edu.in', 'TestPassword123!')
+        self.client.login(username='s1', password='TestPassword123!')
+        self.cat = self._category('Python', 2)
+        self.other = self._category('Django', 2)
+
+    def _category(self, name, n):
+        cat = Category.objects.create(name=name)
+        for i in range(n):
+            q = Question.objects.create(text=f'{name} q{i}', category=cat, time_limit=30)
+            Choice.objects.create(question=q, text='right', is_correct=True)
+            Choice.objects.create(question=q, text='wrong', is_correct=False)
+        return cat
+
+    def _uq(self, cat=None):
+        return UserQuiz.objects.get(user=self.user, category=cat or self.cat)
+
+    def _current(self, cat=None):
+        return Question.objects.get(pk=self._uq(cat).question_ids[self._uq(cat).current_index])
+
+    def _answer(self, correct=True, follow=False, **extra):
+        c = self._current().choices.get(is_correct=correct)
+        return self.client.post(reverse('question'), {'choice': c.id, **extra}, follow=follow)
+
+    def test_restart_resumes_instead_of_resetting(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        self.client.get(reverse('question'))
+        self._answer()
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))  # the "replay the answers" attempt
+        uq = self._uq()
+        self.assertEqual((uq.current_index, uq.score), (1, 1))
+
+    def test_other_category_does_not_reuse_questions(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        self.client.get(reverse('start_quiz', args=[self.other.id]))
+        ids = set(self._uq(self.other).question_ids)
+        self.assertEqual(ids, set(self.other.questions.values_list('id', flat=True)))
+
+    def test_server_timer_ignores_client_time_taken(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        self.client.get(reverse('question'))
+        UserQuiz.objects.filter(pk=self._uq().pk).update(
+            question_started_at=timezone.now() - timezone.timedelta(seconds=100))
+        self._answer(time_taken=0)  # spoofed; server sees the answer is late
+        self.assertEqual(self._uq().score, 0)
+        self.assertFalse(UserAnswer.objects.get().is_correct)
+
+    def test_bad_input_does_not_crash(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        self.client.get(reverse('question'))
+        r = self.client.post(reverse('question'), {'choice': 'abc', 'time_taken': 'x'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context['error'], 'Pick an option!')
+
+    def test_choice_from_another_question_rejected(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        self.client.get(reverse('question'))
+        foreign = Choice.objects.filter(question__category=self.other).first()
+        r = self.client.post(reverse('question'), {'choice': foreign.id})
+        self.assertEqual(r.context['error'], 'Pick an option!')
+        self.assertEqual(self._uq().current_index, 0)
+
+    def test_result_mid_quiz_does_not_end_quiz(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        r = self.client.get(reverse('result'))
+        self.assertRedirects(r, reverse('question'))
+        self.assertFalse(self._uq().completed)
+
+    def test_violation_redirect_ends_quiz(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        self.client.get(reverse('question'))
+        r = self.client.get(reverse('result') + '?violation=tab_switch')
+        self.assertTrue(r.context['anti_cheat_violation'])
+        self.assertTrue(self._uq().completed)
+
+    def test_early_submission_shows_violation_result(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        self.client.get(reverse('question'))
+        r = self._answer(early_submission='true', follow=True)
+        self.assertTemplateUsed(r, 'quiz/result.html')
+        self.assertTrue(r.context['anti_cheat_violation'])
+        self.assertEqual(self._uq().score, 1)
+
+    def test_full_quiz_completes_with_score(self):
+        self.client.get(reverse('start_quiz', args=[self.cat.id]))
+        for _ in range(2):
+            self.client.get(reverse('question'))
+            self._answer()
+        r = self.client.get(reverse('result'))
+        self.assertEqual((r.context['score'], r.context['total_questions']), (2, 2))
+        self.assertEqual(r.context['wrong_answers'], 0)
+
+    def test_password_reset_link_is_single_use(self):
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        self.client.logout()
+        self.user.refresh_from_db()  # login updated last_login, which is part of the token
+        url = reverse('password_reset_confirm', args=[
+            urlsafe_base64_encode(force_bytes(self.user.pk)),
+            default_token_generator.make_token(self.user)])
+        self.assertTrue(self.client.get(url).context['validlink'])
+        self.client.post(url, {'new_password1': 'BrandNewPass!987', 'new_password2': 'BrandNewPass!987'})
+        self.assertFalse(self.client.get(url).context['validlink'])
+
+    def test_email_uniqueness_is_case_insensitive(self):
+        from quiz.forms import RegisterForm
+        form = RegisterForm({'username': 'x', 'email': 'S1@SRMIST.EDU.IN',
+                             'password1': 'TestPassword123!', 'password2': 'TestPassword123!'})
+        self.assertFalse(form.is_valid())
+
+    def test_resend_verification_is_rate_limited_per_email(self):
+        self.client.logout()
+        User.objects.create_user('u2', 'u2@srmist.edu.in', 'TestPassword123!', is_active=False)
+        codes = [self.client.post(reverse('resend_verification'), {'email': 'u2@srmist.edu.in'},
+                                  REMOTE_ADDR=f'10.0.0.{i}').status_code for i in range(7)]
+        self.assertEqual(codes, [200] * 5 + [429] * 2)  # different IPs, same target address
+        self.assertEqual(len(mail.outbox), 5)
+
+    def test_password_reset_is_rate_limited_per_ip(self):
+        self.client.logout()
+        codes = [self.client.post(reverse('password_reset'), {'email': f'x{i}@srmist.edu.in'}).status_code
+                 for i in range(6)]
+        self.assertEqual(codes[-1], 429)
+
+    def test_register_is_rate_limited_per_ip(self):
+        self.client.logout()
+        codes = [self.client.post(reverse('register'), {}).status_code for _ in range(11)]
+        self.assertEqual((codes[9], codes[10]), (200, 429))
+
+    def test_get_requests_are_not_counted(self):
+        self.client.logout()
+        codes = {self.client.get(reverse('register')).status_code for _ in range(15)}
+        self.assertEqual(codes, {200})

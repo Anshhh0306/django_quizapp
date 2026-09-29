@@ -11,10 +11,10 @@ class RegisterForm(UserCreationForm):
         fields = ("username", "email", "password1", "password2")
 
     def clean_email(self):
-        email = self.cleaned_data.get('email')
+        email = self.cleaned_data.get('email').lower()
         if not email.endswith('@srmist.edu.in'):
             raise ValidationError("Please use your SRMIST email address (@srmist.edu.in)")
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(email__iexact=email).exists():
             raise ValidationError("This email address is already registered.")
         return email
 
