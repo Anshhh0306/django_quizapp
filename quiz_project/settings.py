@@ -164,6 +164,9 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Verification and password-reset links expire after 24 hours (the emails say so)
+PASSWORD_RESET_TIMEOUT = 24 * 60 * 60
+
 # Login redirects
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
