@@ -30,6 +30,14 @@ class RegistrationTests(TestCase):
         self.assertFalse(user.is_active)  # until the emailed link is clicked
         self.assertEqual(len(mail.outbox), 1)
 
+    def test_verification_email_wording_depends_on_role(self):
+        self._register('ad3919@srmist.edu.in')
+        self._register('shantini@srmist.edu.in')
+        student_mail, staff_mail = mail.outbox
+        self.assertIn('Hello ad3919', student_mail.body)
+        self.assertNotIn('administrator must approve', student_mail.body)
+        self.assertIn('administrator must approve', staff_mail.body)
+
     def test_staff_email_is_accepted(self):
         self._register('shantini@srmist.edu.in')
         self.assertEqual(User.objects.get(username='shantini').email, 'shantini@srmist.edu.in')
@@ -73,6 +81,18 @@ class RoleAccessTests(TestCase):
             self.client.logout()
             r = self.client.post(reverse('login'), {'username': name, 'password': PASSWORD})
             self.assertEqual(r.status_code, 302, name)
+
+    def test_superuser_can_log_in_with_any_case_username_or_non_srmist_email(self):
+        User.objects.create_superuser('Anshu', 'anshumaan.das@gmail.com', PASSWORD)
+        for name in ['Anshu', 'anshu', 'ANSHUMAAN.DAS@GMAIL.COM']:
+            self.client.logout()
+            r = self.client.post(reverse('login'), {'username': name, 'password': PASSWORD})
+            self.assertEqual(r.status_code, 302, name)
+        self.assertEqual(self.client.get(reverse('home')).context['role'], 'admin')
+
+    def test_wrong_password_still_fails(self):
+        r = self.client.post(reverse('login'), {'username': 'ad3919', 'password': 'nope'})
+        self.assertEqual(r.status_code, 200)
 
     def test_home_shows_role_specific_content(self):
         self.client.login(username='ad3919', password=PASSWORD)

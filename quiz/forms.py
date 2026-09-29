@@ -38,8 +38,10 @@ class RegisterForm(UserCreationForm):
 
 
 class LoginForm(AuthenticationForm):
-    """Accepts AD3919, ad3919 or ad3919@srmist.edu.in."""
+    """Log in with username or email, in any letter case (AD3919, ad3919, ad3919@srmist.edu.in)."""
 
     def clean_username(self):
-        name = self.cleaned_data['username'].strip().split('@')[0]
-        return User.objects.filter(username__iexact=name).values_list('username', flat=True).first() or name
+        name = self.cleaned_data['username'].strip()
+        user = (User.objects.filter(username__iexact=name).first()
+                or User.objects.filter(email__iexact=name).first())
+        return user.username if user else name

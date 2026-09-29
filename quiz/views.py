@@ -33,6 +33,7 @@ def _send_verification_email(request, user):
     message = render_to_string('quiz/email/verification_email.txt', {
         'user': user,
         'verification_url': verification_url,
+        'is_staff_account': not is_student(user),
     })
     send_mail(
         'Verify your SRMIST email address',
