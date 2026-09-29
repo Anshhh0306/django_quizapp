@@ -233,7 +233,7 @@
         document.addEventListener('fullscreenchange', function() {
             if (!document.fullscreenElement && !gracePeriod) {
                 // Redirect to early submission if they exit fullscreen
-                window.location.href = '{% url "result" %}';
+                window.location.href = '{% url "result" %}?violation=fullscreen_exit';
             }
         });
 

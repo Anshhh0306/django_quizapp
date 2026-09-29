@@ -5,12 +5,13 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import Question, Choice, UserQuiz, Category, UserAnswer
 from .forms import RegisterForm
+from .ratelimit import rate_limit
 from django.contrib.auth import login as auth_login
 from django.db.models import Count, Avg
 from .models import UserStatistics
 
 PRAISES = ["Well done!", "Good job!", "Smarty!", "Legend!", "Bingo!"]
-ROASTS = ["Oh Come on!", "Idiot!", "Ghosh... Oh well", "Try harder!", "Dumbass *sighs in disappointment*"]
+ROASTS = ["Oh come on!", "Not quite...", "Oh well", "Try harder!", "*sighs in disappointment*"]
 
 def random_message(correct=True):
     return random.choice(PRAISES if correct else ROASTS)
@@ -19,41 +20,34 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
-from django.contrib.sites.shortcuts import get_current_site
+from django.urls import reverse
 from .tokens import email_verification_token
 from django.conf import settings
 
+def _send_verification_email(request, user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = email_verification_token.make_token(user)
+    verification_url = request.build_absolute_uri(reverse('verify_email', args=[uid, token]))
+    message = render_to_string('quiz/email/verification_email.txt', {
+        'user': user,
+        'verification_url': verification_url,
+    })
+    send_mail(
+        'Verify your SRMIST email address',
+        message,
+        'noreply@quizplatform.com',
+        [user.email],
+        fail_silently=False,
+    )
+
+@rate_limit('register', 10, 3600)
 def register(request):
     if request.method == 'POST':
         form = RegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
-            
-            # Generate verification token
-            current_site = get_current_site(request)
-            mail_subject = 'Verify your SRMIST email address'
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = email_verification_token.make_token(user)
-            
-            verification_url = f"http://{current_site.domain}/verify/{uid}/{token}/"
-            
-            message = render_to_string('quiz/email/verification_email.txt', {
-                'user': user,
-                'verification_url': verification_url,
-            })
-            
-            # Send verification email
-            send_mail(
-                mail_subject,
-                message,
-                'noreply@quizplatform.com',
-                [user.email],
-                fail_silently=False,
-            )
-            
-            return render(request, 'quiz/verification_sent.html', {
-                'email': user.email
-            })
+            _send_verification_email(request, user)
+            return render(request, 'quiz/verification_sent.html', {'email': user.email})
     else:
         form = RegisterForm()
     return render(request, 'quiz/register.html', {'form': form})
@@ -64,7 +58,7 @@ def verify_email(request, uidb64, token):
         user = User.objects.get(pk=uid)
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
         user = None
-    
+
     if user is not None and email_verification_token.check_token(user, token):
         user.is_active = True
         user.save()
@@ -72,38 +66,13 @@ def verify_email(request, uidb64, token):
     else:
         return render(request, 'quiz/verification_failed.html')
 
+@rate_limit('resend', 5, 3600, field='email')
 def resend_verification(request):
     if request.method == 'POST':
-        email = request.POST.get('email')
-        try:
-            user = User.objects.get(email=email, is_active=False)
-            
-            current_site = get_current_site(request)
-            mail_subject = 'Verify your SRMIST email address'
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = email_verification_token.make_token(user)
-            
-            verification_url = f"http://{current_site.domain}/verify/{uid}/{token}/"
-            
-            message = render_to_string('quiz/email/verification_email.txt', {
-                'user': user,
-                'verification_url': verification_url,
-            })
-            
-            send_mail(
-                mail_subject,
-                message,
-                'noreply@quizplatform.com',
-                [user.email],
-                fail_silently=False,
-            )
-            
-            return render(request, 'quiz/verification_sent.html', {
-                'email': user.email
-            })
-        except User.DoesNotExist:
-            pass
-    
+        user = User.objects.filter(email__iexact=request.POST.get('email', ''), is_active=False).first()
+        if user:
+            _send_verification_email(request, user)
+            return render(request, 'quiz/verification_sent.html', {'email': user.email})
     return redirect('register')
 
 def home(request):
@@ -136,41 +105,54 @@ def anti_cheat_warning(request, category_id):
         'category': category
     })
 
+QUESTIONS_PER_QUIZ = 10
+GRACE_SECONDS = 3  # slack for network latency on the server-side timer
+
+def _finish(userquiz):
+    userquiz.total_questions = len(userquiz.question_ids)
+    userquiz.total_points = sum(
+        Question.objects.filter(id__in=userquiz.question_ids).values_list('points', flat=True)
+    )
+    userquiz.completed = True
+    userquiz.taken_on = timezone.now()
+    userquiz.save()
+
+def _record_answer(userquiz, question, choice, elapsed):
+    """Save an answer (choice=None means timed out), score it, advance to the next question."""
+    correct = bool(choice and choice.is_correct and elapsed <= question.time_limit + GRACE_SECONDS)
+    UserAnswer.objects.update_or_create(
+        user_quiz=userquiz,
+        question=question,
+        defaults={
+            'selected_choice': choice,
+            'is_correct': correct,
+            'time_taken': round(min(elapsed, question.time_limit), 1),
+        },
+    )
+    userquiz.score += correct
+    userquiz.current_index += 1
+    userquiz.question_started_at = None
+    userquiz.save()
+    return correct
+
 @login_required
 def start_quiz(request, category_id):
     category = get_object_or_404(Category, pk=category_id)
-    
-    # Check if already taken this category
-    userquiz = UserQuiz.objects.filter(user=request.user, category=category).first()
-    if userquiz and userquiz.completed:
-        return redirect('already_taken')
-    
-    # Create or reset UserQuiz for this category
     userquiz, _ = UserQuiz.objects.get_or_create(user=request.user, category=category)
-    if not userquiz.completed:  # Only reset if not completed
-        userquiz.score = 0
+    if userquiz.completed:
+        return redirect('already_taken')
+
+    # Only pick questions once; restarting resumes instead of resetting progress
+    if not userquiz.question_ids:
+        ids = list(Question.objects.filter(category=category).values_list('id', flat=True))
+        if not ids:
+            return render(request, 'quiz/error.html',
+                          {'message': 'No questions available in this category.'})
+        random.shuffle(ids)
+        userquiz.question_ids = ids[:QUESTIONS_PER_QUIZ]
         userquiz.save()
 
-    # Check if questions are already in session
-    if 'quiz_qs' in request.session:
-        selected = request.session['quiz_qs']
-    else:
-        # Get 10 random questions from this category
-        qs = list(Question.objects.filter(category=category))
-        random.shuffle(qs)
-        qs = qs[:10]
-        selected = [q.id for q in qs]
-
-    if not selected:
-        return render(request, 'quiz/error.html', 
-                     {'message': 'No questions available in this category.'})
-
-    # save to session
-    request.session['quiz_qs'] = selected
-    request.session['quiz_idx'] = 0
-    request.session['quiz_score'] = 0
     request.session['category_id'] = category_id
-    
     return redirect('question')
 
 @login_required
@@ -178,167 +160,84 @@ def question_view(request):
     category_id = request.session.get('category_id')
     if not category_id:
         return redirect('home')
-        
+
     userquiz = get_object_or_404(UserQuiz, user=request.user, category_id=category_id)
     if userquiz.completed:
         return redirect('already_taken')
-
-    quiz_qs = request.session.get('quiz_qs')
-    if not quiz_qs:
+    if not userquiz.question_ids:
         return redirect('start_quiz', category_id=category_id)
 
-    idx = request.session.get('quiz_idx', 0)
-    if idx >= len(quiz_qs):
+    idx = userquiz.current_index
+    total = len(userquiz.question_ids)
+    if idx >= total:
         return redirect('result')
 
-    qid = quiz_qs[idx]
-    question = get_object_or_404(Question, pk=qid)
-    choices = list(question.choices.all())
-    random.shuffle(choices)  # Randomize choice order
+    question = get_object_or_404(Question, pk=userquiz.question_ids[idx])
 
-    if request.method == 'POST':
-        choice_id = request.POST.get('choice')
-        time_taken = int(request.POST.get('time_taken', question.time_limit))
-        early_submission = request.POST.get('early_submission', 'false') == 'true'
-        
-        # Handle anti-cheat early submission
-        if early_submission:
-            # Mark quiz as completed with current progress
-            userquiz.completed = True
-            userquiz.score = request.session.get('quiz_score', 0)
-            
-            # Store both attempted and total questions  
-            total_questions_count = len(quiz_qs)  # Total questions in quiz
-            
-            # Set total_questions to the actual total (not just attempted)
-            userquiz.total_questions = total_questions_count
-            
-            # Calculate total points for ALL questions (not just attempted)
-            all_questions = Question.objects.filter(id__in=quiz_qs)
-            userquiz.total_points = sum(q.points for q in all_questions)
-            userquiz.taken_on = timezone.now()
-            userquiz.save()
-            
-            # Save the current answer if a choice was made
-            if choice_id:
-                choice = get_object_or_404(Choice, pk=choice_id)
-                correct = choice.is_correct and time_taken < question.time_limit
-                
-                UserAnswer.objects.update_or_create(
-                    user_quiz=userquiz,
-                    question=question,
-                    defaults={
-                        'selected_choice': choice,
-                        'is_correct': correct,
-                        'time_taken': time_taken
-                    }
-                )
-                
-                if correct:
-                    userquiz.score += 1
-                    userquiz.save()
-            
-            # Store early submission info in session
-            request.session['anti_cheat_violation'] = True
-            
-            # Cleanup quiz session but keep anti-cheat info
-            for k in ['quiz_qs', 'quiz_idx', 'quiz_score', 'category_id']:
-                request.session.pop(k, None)
-            
-            return redirect('result')
-        
-        # Store current question state
-        request.session['current_question'] = {
-            'id': qid,
-            'idx': idx
-        }
-        request.session.modified = True
-        
-        # If time ran out and no choice was made
-        if not choice_id and time_taken >= question.time_limit:
-            # Save user answer as no answer (timed out)
-            UserAnswer.objects.update_or_create(
-                user_quiz=userquiz,
-                question=question,
-                defaults={
-                    'selected_choice': None,
-                    'is_correct': False,
-                    'time_taken': time_taken
-                }
-            )
-            
-            context = {
-                'question': question,
-                'correct': False,
-                'message': "Time's up!",
-                'correct_choice': question.choices.filter(is_correct=True).first(),
-                'is_last': (idx == len(quiz_qs)-1),
-                'timed_out': True
-            }
-            request.session['quiz_idx'] = idx + 1
-            return render(request, 'quiz/feedback_anticheat.html', context)
-            
-        if not choice_id:
-            return render(request, 'quiz/question.html', {
-                'question': question,
-                'choices': choices,
-                'error': 'Pick an option!',
-                'progress_percentage': (idx / len(quiz_qs)) * 100,
-                'current_question': idx + 1,
-                'total_questions': len(quiz_qs)
-            })
+    # The clock starts when the question is first served and survives reloads
+    if userquiz.question_started_at is None:
+        userquiz.question_started_at = timezone.now()
+        userquiz.save()
+    elapsed = (timezone.now() - userquiz.question_started_at).total_seconds()
+    limit = question.time_limit
 
-        choice = get_object_or_404(Choice, pk=choice_id)
-        correct = choice.is_correct and time_taken < question.time_limit
-        message = random_message(correct=correct)
+    if elapsed > limit + GRACE_SECONDS:  # left and came back after time was up
+        _record_answer(userquiz, question, None, elapsed)
+        return redirect('question')
 
-        # Save user answer for review
-        UserAnswer.objects.update_or_create(
-            user_quiz=userquiz,
-            question=question,
-            defaults={
-                'selected_choice': choice,
-                'is_correct': correct,
-                'time_taken': time_taken
-            }
-        )
+    def question_page(error=None):
+        choices = list(question.choices.all())
+        random.shuffle(choices)  # Randomize choice order
+        return render(request, 'quiz/question.html', {
+            'question': {'text': question.text, 'time_limit': max(1, round(limit - elapsed))},
+            'choices': [{'id': c.id, 'text': c.text} for c in choices],  # no correct-answer info
+            'error': error,
+            'progress_percentage': (idx / total) * 100,
+            'current_question': idx + 1,
+            'total_questions': total,
+        })
 
-        # update score and session
-        if correct:
-            request.session['quiz_score'] = request.session.get('quiz_score', 0) + 1
+    if request.method != 'POST':
+        return question_page()
 
-        # prepare context showing feedback immediately
-        context = {
+    choice_id = request.POST.get('choice', '')
+    choice = None
+    if choice_id.isdigit():  # must belong to this question
+        choice = Choice.objects.filter(pk=choice_id, question=question).first()
+    correct_choice = question.choices.filter(is_correct=True).first()
+
+    # Anti-cheat early submission: score what was answered and end the quiz
+    if request.POST.get('early_submission') == 'true':
+        if choice:
+            _record_answer(userquiz, question, choice, elapsed)
+        _finish(userquiz)
+        request.session['anti_cheat_violation'] = True
+        return redirect('result')
+
+    if choice is None:
+        if elapsed < limit - GRACE_SECONDS:
+            return question_page('Pick an option!')
+        _record_answer(userquiz, question, None, elapsed)  # client timer ran out
+        return render(request, 'quiz/feedback_anticheat.html', {
             'question': question,
-            'choice': choice,
-            'correct': correct,
-            'message': message,
-            'correct_choice': question.choices.filter(is_correct=True).first(),
-            'explanation': choice.explanation,
-            'is_last': (idx == len(quiz_qs)-1),
-            'time_taken': time_taken,
-            'time_limit': question.time_limit
-        }
+            'correct': False,
+            'message': "Time's up!",
+            'correct_choice': correct_choice,
+            'is_last': idx == total - 1,
+            'timed_out': True,
+        })
 
-        # increment index for next visit
-        request.session['quiz_idx'] = idx + 1
-        return render(request, 'quiz/feedback_anticheat.html', context)
-
-    # Create safe versions of choices without correct answer information
-    safe_choices = [{
-        'id': choice.id,
-        'text': choice.text
-    } for choice in choices]
-
-    return render(request, 'quiz/question.html', {
-        'question': {
-            'text': question.text,
-            'time_limit': question.time_limit
-        },
-        'choices': safe_choices,
-        'progress_percentage': (idx / len(quiz_qs)) * 100,
-        'current_question': idx + 1,
-        'total_questions': len(quiz_qs)
+    correct = _record_answer(userquiz, question, choice, elapsed)
+    return render(request, 'quiz/feedback_anticheat.html', {
+        'question': question,
+        'choice': choice,
+        'correct': correct,
+        'message': random_message(correct=correct),
+        'correct_choice': correct_choice,
+        'explanation': choice.explanation,
+        'is_last': idx == total - 1,
+        'time_taken': round(elapsed),
+        'time_limit': limit,
     })
 
 @login_required
@@ -346,70 +245,26 @@ def result(request):
     category_id = request.session.get('category_id')
     if not category_id:
         return redirect('home')
-        
+
     category = get_object_or_404(Category, pk=category_id)
     userquiz = get_object_or_404(UserQuiz, user=request.user, category=category)
-    
-    if userquiz.completed and userquiz.taken_on:
-        # Calculate percentages for completed quiz
-        correct_percentage = (userquiz.score / userquiz.total_questions) * 100 if userquiz.total_questions else 0
-        points_percentage = (userquiz.score / userquiz.total_points) * 100 if userquiz.total_points else 0
-        wrong_answers = userquiz.total_questions - userquiz.score
-        
-        # Check for anti-cheat violation
-        anti_cheat_violation = request.session.pop('anti_cheat_violation', False)
-        
-        # Calculate actual attempted questions from database records
-        attempted_questions = UserAnswer.objects.filter(user_quiz=userquiz).count()
-        unattempted_questions = userquiz.total_questions - attempted_questions
-        
-        return render(request, 'quiz/result.html', {
-            'category': category,
-            'score': userquiz.score,
-            'total_points': userquiz.total_points,
-            'total_questions': userquiz.total_questions,
-            'attempted_questions': attempted_questions,
-            'unattempted_questions': unattempted_questions,
-            'wrong_answers': attempted_questions - userquiz.score,  # Wrong from attempted
-            'passing_score': userquiz.total_points // 2,
-            'taken_on': userquiz.taken_on,
-            'correct_percentage': correct_percentage,
-            'points_percentage': points_percentage,
-            'anti_cheat_violation': anti_cheat_violation
-        })
 
-    # This should only run for NEW quiz completions, not existing ones
-    quiz_qs = request.session.get('quiz_qs', [])
-    questions = Question.objects.filter(id__in=quiz_qs)
-    total_points = sum(q.points for q in questions)
-    score = request.session.get('quiz_score', 0)
-    total_questions = len(quiz_qs)
-    
-    # Calculate percentages
-    correct_percentage = (score / total_questions) * 100 if total_questions else 0
-    points_percentage = (score / total_points) * 100 if total_points else 0
-    wrong_answers = total_questions - score
-    
-    # Round percentages to 1 decimal place
-    correct_percentage = round(correct_percentage, 1)
-    points_percentage = round(points_percentage, 1)
-    
-    # mark user as completed (no retake for this category)
-    userquiz.score = score
-    userquiz.total_questions = total_questions
-    userquiz.total_points = total_points
-    userquiz.completed = True
-    userquiz.taken_on = timezone.now()
-    userquiz.save()
+    if not userquiz.completed:
+        if not userquiz.question_ids:
+            return redirect('home')
+        done = userquiz.current_index >= len(userquiz.question_ids)
+        # Mid-quiz, only an anti-cheat redirect (?violation=...) may end the quiz early
+        if not (done or request.GET.get('violation')):
+            return redirect('question')
+        _finish(userquiz)
+        if not done:
+            request.session['anti_cheat_violation'] = True
 
-    # cleanup session
     anti_cheat_violation = request.session.pop('anti_cheat_violation', False)
-    
-    # Calculate actual attempted questions from database records
-    attempted_questions = UserAnswer.objects.filter(user_quiz=userquiz).count()
-    unattempted_questions = total_questions - attempted_questions
-    for k in ['quiz_qs', 'quiz_idx', 'quiz_score', 'category_id']:
-        request.session.pop(k, None)
+    total_questions = userquiz.total_questions
+    total_points = userquiz.total_points
+    score = userquiz.score
+    attempted_questions = userquiz.user_answers.count()
 
     return render(request, 'quiz/result.html', {
         'category': category,
@@ -417,13 +272,13 @@ def result(request):
         'total_points': total_points,
         'total_questions': total_questions,
         'attempted_questions': attempted_questions,
-        'unattempted_questions': unattempted_questions,
+        'unattempted_questions': total_questions - attempted_questions,
         'wrong_answers': attempted_questions - score,  # Wrong from attempted
         'passing_score': total_points // 2,
-        'correct_percentage': correct_percentage,
-        'points_percentage': points_percentage,
-        'taken_on': timezone.now(),
-        'anti_cheat_violation': anti_cheat_violation
+        'correct_percentage': round(score / total_questions * 100, 1) if total_questions else 0,
+        'points_percentage': round(score / total_points * 100, 1) if total_points else 0,
+        'taken_on': userquiz.taken_on,
+        'anti_cheat_violation': anti_cheat_violation,
     })
 
 
@@ -653,6 +508,7 @@ def quiz_review(request, category_id):
 from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.tokens import default_token_generator
 
+@rate_limit('pwreset', 5, 3600, field='email')
 def custom_password_reset(request):
     """Custom password reset that integrates with SRMIST email verification"""
     if request.method == 'POST':
@@ -679,12 +535,11 @@ def custom_password_reset(request):
                     })
                 
                 # Generate password reset token using our verification system
-                current_site = get_current_site(request)
                 mail_subject = 'Password Reset - SRMIST Quiz Platform'
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
-                token = email_verification_token.make_token(user)
-                
-                reset_url = f"http://{current_site.domain}/accounts/reset/{uid}/{token}/"
+                token = default_token_generator.make_token(user)
+                reset_url = request.build_absolute_uri(
+                    reverse('password_reset_confirm', args=[uid, token]))
                 
                 message = render_to_string('quiz/email/password_reset_email.txt', {
                     'user': user,
@@ -724,7 +579,7 @@ def custom_password_reset_confirm(request, uidb64, token):
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
         user = None
 
-    if user is not None and email_verification_token.check_token(user, token):
+    if user is not None and default_token_generator.check_token(user, token):
         # Valid token, show password reset form
         if request.method == 'POST':
             from django.contrib.auth.forms import SetPasswordForm
