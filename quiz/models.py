@@ -148,3 +148,28 @@ class ExamAllowed(models.Model):
 
     class Meta:
         unique_together = ['exam', 'email']
+
+
+class ExamAttempt(models.Model):
+    """One row per student who took a seat (after consent). Grows in step 2c with timing and score."""
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='attempts')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='exam_attempts')
+    consented_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    rejoins = models.PositiveIntegerField(default=0)  # times they came back through the link (wifi drop, etc.)
+    last_rejoin_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ['exam', 'user']
+
+
+class ExamDenied(models.Model):
+    """Students turned away at the door (not on class list / no seats). One row per student, with a counter."""
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='denied')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    reason = models.CharField(max_length=20)
+    tries = models.PositiveIntegerField(default=1)
+    last_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['exam', 'user']

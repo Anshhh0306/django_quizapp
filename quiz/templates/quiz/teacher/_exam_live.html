@@ -1,0 +1,38 @@
+<ul>
+  <li>Status: {{ exam.status }}</li>
+  <li>Seats:
+    {% if has_list %}{{ seats_used }} of {{ exam.seat_limit }} listed students have joined
+    {% else %}{{ seats_used }} of {{ exam.seat_limit }} taken{% endif %}
+  </li>
+</ul>
+
+<h3>{% if has_list %}Class list: who has joined{% else %}Joined{% endif %}</h3>
+{% if roster %}
+<ul style="list-style:none;padding:0;">
+  {% for name, joined in roster %}
+  <li style="padding:2px 8px;{% if joined %}background:#d4edda;{% else %}color:#888;{% endif %}">{% if joined %}&#10003;{% else %}&#9675;{% endif %} {{ name }}</li>
+  {% endfor %}
+</ul>
+{% if roster|length >= 300 %}<p><small>Showing the first 300.</small></p>{% endif %}
+{% else %}
+<p>Nobody has joined yet.</p>
+{% endif %}
+
+{% if reconnected %}
+<h3>Reconnected ({{ reconnected|length }})</h3>
+<p><small>These students came back through the link after joining (for example a wifi drop). They were let back in. Check with them afterwards if needed.</small></p>
+<ul>
+  {% for a in reconnected %}
+  <li>{{ a.user.username }}: {{ a.rejoins }} time{{ a.rejoins|pluralize }}, last at {{ a.last_rejoin_at|time:"H:i:s" }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if denied %}
+<h3>Turned away ({{ denied|length }})</h3>
+<ul>
+  {% for d in denied %}
+  <li>{{ d.user.username }}: {{ d.reason }} ({{ d.tries }} tr{{ d.tries|pluralize:"y,ies" }}, last at {{ d.last_at|time:"H:i:s" }})</li>
+  {% endfor %}
+</ul>
+{% endif %}
