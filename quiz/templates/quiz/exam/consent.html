@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="auth-form-container">
+    <h2>{{ exam.title }}</h2>
+    <p>
+      {% if exam.mode == 'scheduled' %}Scheduled exam, {{ exam.duration_minutes }} minutes. Your teacher starts it for everyone at the same time.
+      {% else %}Open exam: no timer.{% endif %}
+    </p>
+
+    <h3>Before you join</h3>
+    <ul>
+      <li>Your answers and the time you take are recorded.</li>
+      <li>During a scheduled exam the page may also record activity such as leaving fullscreen or switching tabs, so your teacher can review anything unusual.</li>
+      <li>Nothing is decided automatically. A person reviews any flag.</li>
+      <li>Do not share your login. One account can be used on one device at a time.</li>
+    </ul>
+
+    <form method="post" class="simple-form">
+      {% csrf_token %}
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <label><input type="checkbox" name="agree"> I understand and agree.</label>
+      <button type="submit" class="btn btn-create">Join exam lobby</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

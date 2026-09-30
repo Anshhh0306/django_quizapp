@@ -68,7 +68,9 @@ class ExamForm(forms.ModelForm):
     def __init__(self, *args, owner, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['questions'].queryset = Question.objects.filter(owner=owner).order_by('id')
-        self.fields['seat_limit'].help_text = 'Required. You can raise it later.'
+        self.fields['seat_limit'].required = False
+        self.fields['seat_limit'].help_text = ('Only needed without a class list. '
+                                               'With a class list, every listed student automatically has a seat.')
 
     def clean(self):
         data = super().clean()
@@ -76,8 +78,6 @@ class ExamForm(forms.ModelForm):
             self.add_error('duration_minutes', 'Duration is required for a scheduled exam.')
         if data.get('mode') == Exam.OPEN:
             data['duration_minutes'] = None  # open exams have no timer
-        if not data.get('seat_limit'):
-            self.add_error('seat_limit', 'Seat limit must be at least 1.')
         text = data.get('allowed_text', '')
         if data.get('allowed_file'):
             try:
@@ -88,4 +88,8 @@ class ExamForm(forms.ModelForm):
         if bad:
             self.add_error('allowed_text', f'Not valid student IDs: {", ".join(bad[:10])}')
         self.cleaned_data['allowed_emails'] = emails
+        if emails:
+            data['seat_limit'] = len(emails)  # class list = one seat per listed student
+        elif not data.get('seat_limit'):
+            self.add_error('seat_limit', 'Enter a seat limit, or add a class list.')
         return data

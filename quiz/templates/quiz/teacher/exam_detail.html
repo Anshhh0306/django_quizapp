@@ -8,11 +8,21 @@
   <p><strong>Exam link (share with students):</strong><br><code>{{ link }}</code></p>
   <ul>
     <li>Mode: {{ exam.get_mode_display }}{% if exam.duration_minutes %}, {{ exam.duration_minutes }} minutes{% endif %}</li>
-    <li>Status: {{ exam.status }}</li>
     <li>Questions: {{ question_count }}</li>
-    <li>Seats: {{ exam.seat_limit }}</li>
   </ul>
 
+  {% if exam.status == 'draft' %}
+  <form method="post" class="simple-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="open">
+    <button type="submit" class="btn btn-create">Open for students</button>
+    <small class="help-text">Students can then use the link, accept the notice and wait in the lobby.</small>
+  </form>
+  {% endif %}
+
+  <div id="live">{% include "quiz/teacher/_exam_live.html" %}</div>
+
+  {% if not has_list %}
   <h3>Raise seat limit</h3>
   <form method="post" class="simple-form">
     {% csrf_token %}
@@ -20,11 +30,11 @@
     <input type="number" name="seat_limit" min="{{ exam.seat_limit|add:1 }}" value="{{ exam.seat_limit|add:1 }}">
     <button type="submit" class="btn btn-create">Raise</button>
   </form>
+  {% endif %}
 
   <h3>Class list ({{ allowed|length }})</h3>
   {% if allowed %}
-    <p>Only these students can enter.</p>
-    <ul>{% for a in allowed %}<li>{{ a.email }}</li>{% endfor %}</ul>
+    <p>Only these students can enter, and each one automatically has a seat. Who has joined is shown above.</p>
   {% else %}
     <p>No class list: anyone with the link can enter, up to the seat limit.</p>
   {% endif %}
@@ -36,4 +46,15 @@
     <button type="submit" class="btn btn-create">Add students</button>
   </form>
 </div>
+
+<script>
+  // Refresh the live box (seats, reconnects, turned away) every 5 seconds while this tab is visible.
+  const live = document.getElementById('live');
+  setInterval(() => {
+    if (document.hidden) return;
+    fetch("{% url 'exam_live' exam.pk %}", {credentials: 'same-origin'})
+      .then(r => r.ok ? r.text() : null)
+      .then(html => { if (html !== null) live.innerHTML = html; });
+  }, 5000);
+</script>
 {% endblock %}

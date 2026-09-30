@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, teacher_views
+from . import views, teacher_views, exam_views
 from .forms import LoginForm
 from django.contrib.auth import views as auth_views
 
@@ -35,5 +35,9 @@ urlpatterns = [
     path('teach/templates/students.csv', teacher_views.student_template, name='student_template'),
     path('teach/exams/new/', teacher_views.exam_new, name='exam_new'),
     path('teach/exams/<int:pk>/', teacher_views.exam_detail, name='exam_detail'),
-    path('exam/<str:token>/', teacher_views.exam_entry, name='exam_entry'),
+    path('teach/exams/<int:pk>/live/', teacher_views.exam_live, name='exam_live'),
+    path('exam/<str:token>/', exam_views.exam_entry, name='exam_entry'),
+    path('exam/<str:token>/consent/', exam_views.exam_consent, name='exam_consent'),
+    path('exam/<str:token>/lobby/', exam_views.exam_lobby, name='exam_lobby'),
+    path('exam/<str:token>/status/', exam_views.exam_status, name='exam_status'),
 ]
