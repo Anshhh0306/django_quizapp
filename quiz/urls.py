@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import views, teacher_views
 from .forms import LoginForm
 from django.contrib.auth import views as auth_views
 
@@ -27,4 +27,13 @@ urlpatterns = [
     path('question/', views.question_view, name='question'),
     path('result/', views.result, name='result'),
     path('already/', views.already_taken, name='already_taken'),
+
+    # Teacher tools and exam links
+    path('teach/', teacher_views.teach_home, name='teach_home'),
+    path('teach/questions/', teacher_views.question_bank, name='question_bank'),
+    path('teach/templates/questions.csv', teacher_views.question_template, name='question_template'),
+    path('teach/templates/students.csv', teacher_views.student_template, name='student_template'),
+    path('teach/exams/new/', teacher_views.exam_new, name='exam_new'),
+    path('teach/exams/<int:pk>/', teacher_views.exam_detail, name='exam_detail'),
+    path('exam/<str:token>/', teacher_views.exam_entry, name='exam_entry'),
 ]

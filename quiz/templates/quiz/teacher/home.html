@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>Teacher tools</h2>
+  {% if messages %}{% for m in messages %}<div class="error">{{ m }}</div>{% endfor %}{% endif %}
+  <p>
+    <a href="{% url 'question_bank' %}" class="btn btn-view">My question bank</a>
+    <a href="{% url 'exam_new' %}" class="btn btn-create">Create exam</a>
+  </p>
+  <h3>My exams</h3>
+  {% if exams %}
+    <ul>
+    {% for e in exams %}
+      <li><a href="{% url 'exam_detail' e.pk %}">{{ e.title }}</a> &mdash; {{ e.get_mode_display }}, {{ e.status }}, {{ e.seat_limit }} seats</li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p>No exams yet. Upload questions, then create your first exam.</p>
+  {% endif %}
+</div>
+{% endblock %}
