@@ -14,6 +14,7 @@ class Category(models.Model):
 class Question(models.Model):
     text = models.CharField(max_length=500)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='questions', null=True)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='question_bank')  # teacher who uploaded it
     time_limit = models.IntegerField(default=30)  # Time limit in seconds
     points = models.IntegerField(default=1)  # Points awarded for correct answer
     
@@ -111,3 +112,39 @@ def update_user_statistics(sender, instance, **kwargs):
         for rank, stats in enumerate(all_stats, 1):
             stats.rank = rank
             stats.save()
+
+
+# ---- Exams (teacher-created, shared by link) ----
+import secrets
+
+
+def new_exam_token():
+    return secrets.token_urlsafe(16)  # 128 bits: unguessable
+
+
+class Exam(models.Model):
+    SCHEDULED, OPEN = 'scheduled', 'open'
+    MODES = [(SCHEDULED, 'Scheduled (teacher starts it, fixed time)'), (OPEN, 'Open (anytime, no timer)')]
+    DRAFT, LOBBY, RUNNING, ENDED = 'draft', 'lobby', 'running', 'ended'
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='exams')
+    title = models.CharField(max_length=200)
+    mode = models.CharField(max_length=10, choices=MODES, default=SCHEDULED)
+    duration_minutes = models.PositiveIntegerField(null=True, blank=True)  # scheduled only
+    seat_limit = models.PositiveIntegerField()  # compulsory
+    token = models.CharField(max_length=32, unique=True, default=new_exam_token, editable=False)
+    status = models.CharField(max_length=10, default=DRAFT)
+    questions = models.ManyToManyField(Question, related_name='exams')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+
+
+class ExamAllowed(models.Model):
+    """Optional class list: if an exam has any rows here, only these emails may enter."""
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='allowed')
+    email = models.CharField(max_length=254)  # stored lowercase
+
+    class Meta:
+        unique_together = ['exam', 'email']

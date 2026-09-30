@@ -27,7 +27,8 @@
     {% elif role == 'teacher' %}
     <div class="dashboard">
       <h2>Welcome, {{ user.username }}</h2>
-      <p>Your teacher account is approved. Exam tools are coming soon.</p>
+      <p>Your teacher account is approved.</p>
+      <a href="{% url 'teach_home' %}" class="btn btn-create">Open teacher tools</a>
     </div>
     {% elif role == 'admin' %}
     <div class="dashboard">

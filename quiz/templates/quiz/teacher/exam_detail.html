@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>{{ exam.title }}</h2>
+  <p><a href="{% url 'teach_home' %}">Back</a></p>
+  {% if messages %}{% for m in messages %}<div>{{ m }}</div>{% endfor %}{% endif %}
+
+  <p><strong>Exam link (share with students):</strong><br><code>{{ link }}</code></p>
+  <ul>
+    <li>Mode: {{ exam.get_mode_display }}{% if exam.duration_minutes %}, {{ exam.duration_minutes }} minutes{% endif %}</li>
+    <li>Status: {{ exam.status }}</li>
+    <li>Questions: {{ question_count }}</li>
+    <li>Seats: {{ exam.seat_limit }}</li>
+  </ul>
+
+  <h3>Raise seat limit</h3>
+  <form method="post" class="simple-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="seats">
+    <input type="number" name="seat_limit" min="{{ exam.seat_limit|add:1 }}" value="{{ exam.seat_limit|add:1 }}">
+    <button type="submit" class="btn btn-create">Raise</button>
+  </form>
+
+  <h3>Class list ({{ allowed|length }})</h3>
+  {% if allowed %}
+    <p>Only these students can enter.</p>
+    <ul>{% for a in allowed %}<li>{{ a.email }}</li>{% endfor %}</ul>
+  {% else %}
+    <p>No class list: anyone with the link can enter, up to the seat limit.</p>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" class="simple-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="allow">
+    <textarea name="students" rows="4" placeholder="AD3919, AB1234 ..."></textarea>
+    <p>Or upload a file (CSV or Excel): <input type="file" name="students_file" accept=".csv,.xlsx"> Template: <a href="{% url 'student_template' %}">CSV</a> | <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
+    <button type="submit" class="btn btn-create">Add students</button>
+  </form>
+</div>
+{% endblock %}

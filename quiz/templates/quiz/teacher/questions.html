@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>My question bank</h2>
+  <p>{{ count }} question(s) in your bank. <a href="{% url 'teach_home' %}">Back</a></p>
+  {% if messages %}{% for m in messages %}<div>{{ m }}</div>{% endfor %}{% endif %}
+  {% if errors %}
+    <div class="error">
+      <strong>Nothing was uploaded. Fix these and try again:</strong>
+      <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  <h3>Upload questions (CSV or Excel)</h3>
+  <form method="post" enctype="multipart/form-data" class="simple-form">
+    {% csrf_token %}
+    <input type="file" name="file" accept=".csv,.xlsx" required>
+    <button type="submit" class="btn btn-create">Upload</button>
+  </form>
+
+  <p>Download template: <a href="{% url 'question_template' %}" class="btn btn-view">CSV</a> <a href="{% url 'question_template' %}?format=xlsx" class="btn btn-view">Excel</a></p>
+
+  <h4>Format</h4>
+  <p>First row is the header. Columns: <code>question, option_a, option_b, option_c, option_d, correct, points</code>.
+     <code>correct</code> is A, B, C or D. Options C and D and <code>points</code> are optional (points default to 1). Use .xlsx (first sheet) or CSV UTF-8, max 500 rows.</p>
+  <pre>question,option_a,option_b,option_c,option_d,correct,points
+What does len("abc") return?,2,3,4,,B,1
+Which keyword defines a function in Python?,func,def,function,lambda,B,2</pre>
+</div>
+{% endblock %}

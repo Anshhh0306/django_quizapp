@@ -2,6 +2,8 @@ from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.core.exceptions import ValidationError
+from .exams import parse_allowed, read_student_list
+from .models import Exam, Question
 from .roles import STUDENT_RE, STAFF_RE
 
 class RegisterForm(UserCreationForm):
@@ -45,3 +47,45 @@ class LoginForm(AuthenticationForm):
         user = (User.objects.filter(username__iexact=name).first()
                 or User.objects.filter(email__iexact=name).first())
         return user.username if user else name
+
+
+class ExamForm(forms.ModelForm):
+    allowed_text = forms.CharField(
+        label='Class list (optional)', required=False, widget=forms.Textarea(attrs={'rows': 5}),
+        help_text='Register numbers or emails separated by spaces, commas or new lines. '
+                  'Leave empty to let anyone with the link in (up to the seat limit).')
+
+    allowed_file = forms.FileField(
+        label='Or upload a class list (CSV or Excel)', required=False,
+        help_text='One register number or email per row (first column). Added to anything typed above.')
+
+    class Meta:
+        model = Exam
+        fields = ('title', 'mode', 'duration_minutes', 'seat_limit', 'questions')
+        widgets = {'questions': forms.CheckboxSelectMultiple}
+        labels = {'duration_minutes': 'Duration (minutes)'}
+
+    def __init__(self, *args, owner, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['questions'].queryset = Question.objects.filter(owner=owner).order_by('id')
+        self.fields['seat_limit'].help_text = 'Required. You can raise it later.'
+
+    def clean(self):
+        data = super().clean()
+        if data.get('mode') == Exam.SCHEDULED and not data.get('duration_minutes'):
+            self.add_error('duration_minutes', 'Duration is required for a scheduled exam.')
+        if data.get('mode') == Exam.OPEN:
+            data['duration_minutes'] = None  # open exams have no timer
+        if not data.get('seat_limit'):
+            self.add_error('seat_limit', 'Seat limit must be at least 1.')
+        text = data.get('allowed_text', '')
+        if data.get('allowed_file'):
+            try:
+                text += '\n' + read_student_list(data['allowed_file'].read(), data['allowed_file'].name)
+            except ValueError as e:
+                self.add_error('allowed_file', str(e))
+        emails, bad = parse_allowed(text)
+        if bad:
+            self.add_error('allowed_text', f'Not valid student IDs: {", ".join(bad[:10])}')
+        self.cleaned_data['allowed_emails'] = emails
+        return data
