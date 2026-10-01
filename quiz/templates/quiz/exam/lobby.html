@@ -4,28 +4,44 @@
   <div class="auth-form-container">
     <h2>{{ exam.title }}</h2>
     <p id="lobby-message">You're in. Waiting for your teacher to start the exam. Keep this page open.</p>
+    <p id="countdown" style="font-size:2.5rem;font-weight:bold;"></p>
   </div>
 </div>
 
 <script>
-  // Poll the status every 7-10 seconds (random offset so students don't all hit the server together).
+  // The server's clock decides everything: we poll its status, then count down to ITS start time.
   const statusUrl = "{% url 'exam_status' exam.token %}";
+  const takeUrl = "{% url 'exam_take' exam.token %}";
+  const doneUrl = "{% url 'exam_done' exam.token %}";
   const message = document.getElementById('lobby-message');
-  function poll() {
+  const countdown = document.getElementById('countdown');
+  let counting = false;
+
+  // Small random delay so thousands of browsers don't hit the server in the same instant.
+  const go = (url) => setTimeout(() => { window.location = url; }, Math.random() * 1500);
+
+  function startCountdown(startsAt, serverNow) {
+    counting = true;
+    const t0 = performance.now();
+    message.textContent = 'The exam is about to start. Get ready!';
+    const tick = setInterval(() => {
+      const remaining = startsAt - (serverNow + (performance.now() - t0));  // server time, not this computer's clock
+      if (remaining <= 0) { clearInterval(tick); countdown.textContent = 'Go!'; go(takeUrl); return; }
+      countdown.textContent = Math.ceil(remaining / 1000);
+    }, 200);
+  }
+
+  function poll(first) {
     fetch(statusUrl, {credentials: 'same-origin'})
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data && (data.status === 'running' || data.status === 'ended')) {
-          // Step 2c replaces this with the countdown and the exam itself.
-          message.textContent = data.status === 'running'
-            ? 'The exam has started. (Taking the exam is built in the next step.)'
-            : 'This exam has ended.';
-          return;
-        }
-        setTimeout(poll, 7000 + Math.random() * 3000);
+        if (data && data.phase === 'countdown' && !counting) { startCountdown(data.starts_at, data.now); return; }
+        if (data && data.phase === 'running') { go(takeUrl); return; }
+        if (data && data.phase === 'ended') { go(doneUrl); return; }
+        if (!counting) setTimeout(poll, 7000 + Math.random() * 3000);  // lobby: check every 7-10 seconds
       })
-      .catch(() => setTimeout(poll, 10000));
+      .catch(() => { if (!counting) setTimeout(poll, 10000); });
   }
-  setTimeout(poll, 7000 + Math.random() * 3000);
+  poll();
 </script>
 {% endblock %}

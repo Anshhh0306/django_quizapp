@@ -186,3 +186,6 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
 
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', f'SRM Quiz Platform <{EMAIL_HOST_USER}>')
+# Tests create many users; a fast hasher makes the suite several times quicker. Only active under "manage.py test".
+if "test" in __import__("sys").argv:
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

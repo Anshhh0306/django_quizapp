@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>Results: {{ exam.title }}</h2>
+  <p><a href="{% url 'exam_detail' exam.pk %}">Back to exam</a>
+     | Download: <a href="{% url 'exam_results' exam.pk %}?format=csv">CSV</a> | <a href="{% url 'exam_results' exam.pk %}?format=xlsx">Excel</a></p>
+  {% if phase != 'ended' %}<p><em>The exam is still {{ phase }}. These numbers are live and will change.</em></p>{% endif %}
+
+  <ul>
+    <li>Submitted: <strong>{{ summary.submitted }}</strong> of {{ summary.class_size }} {% if exam.allowed.exists %}on the class list{% else %}who joined{% endif %}</li>
+    {% if summary.in_progress %}<li>Still answering: {{ summary.in_progress }}</li>{% endif %}
+    {% if summary.not_started %}<li>Joined but never started: {{ summary.not_started }}</li>{% endif %}
+    {% if summary.absent %}<li>Did not join: {{ summary.absent }}</li>{% endif %}
+    {% if summary.average is not None %}<li>Average: {{ summary.average }}%, highest {{ summary.highest }}%, lowest {{ summary.lowest }}%</li>{% endif %}
+  </ul>
+
+  <table border="1" cellpadding="6" style="border-collapse:collapse;width:100%;">
+    <thead>
+      <tr><th>Student</th><th>Status</th><th>Score</th><th>%</th><th>Correct</th><th>Wrong</th><th>Unanswered</th><th>Time</th><th>Reconnects</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.name }}</td>
+        <td>{{ r.status }}</td>
+        <td>{% if r.score is not None and r.status == 'Submitted' %}{{ r.score }} / {{ r.total }}{% else %}&ndash;{% endif %}</td>
+        <td>{% if r.percent is not None %}{{ r.percent }}%{% else %}&ndash;{% endif %}</td>
+        <td>{% if r.right is not None %}{{ r.right }}{% else %}&ndash;{% endif %}</td>
+        <td>{% if r.wrong is not None %}{{ r.wrong }}{% else %}&ndash;{% endif %}</td>
+        <td>{% if r.unanswered is not None %}{{ r.unanswered }}{% else %}&ndash;{% endif %}</td>
+        <td>{{ r.minutes|default:"&ndash;" }}</td>
+        <td>{{ r.rejoins|default:"" }}</td>
+        <td>{% if r.attempt and r.attempt.started_at %}<a href="{% url 'exam_result_detail' exam.pk r.attempt.pk %}">View answers</a>{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="10">Nobody has joined yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

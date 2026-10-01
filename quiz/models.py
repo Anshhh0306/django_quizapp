@@ -117,6 +117,8 @@ def update_user_statistics(sender, instance, **kwargs):
 # ---- Exams (teacher-created, shared by link) ----
 import secrets
 
+from django.utils import timezone
+
 
 def new_exam_token():
     return secrets.token_urlsafe(16)  # 128 bits: unguessable
@@ -136,9 +138,20 @@ class Exam(models.Model):
     status = models.CharField(max_length=10, default=DRAFT)
     questions = models.ManyToManyField(Question, related_name='exams')
     created_at = models.DateTimeField(auto_now_add=True)
+    starts_at = models.DateTimeField(null=True, blank=True)  # scheduled: set when the teacher presses Start (+countdown)
+    ends_at = models.DateTimeField(null=True, blank=True)    # scheduled: starts_at + duration
 
     def __str__(self):
         return self.title
+
+    def phase(self, now=None):
+        """draft / lobby / countdown / running / ended, from the status and the server clock."""
+        if self.status == self.RUNNING and self.starts_at:  # scheduled exam after Start
+            now = now or timezone.now()
+            if now < self.starts_at:
+                return 'countdown'
+            return 'ended' if now >= self.ends_at else 'running'
+        return self.status  # open exams have no clock; draft/lobby/ended are explicit
 
 
 class ExamAllowed(models.Model):
@@ -158,9 +171,27 @@ class ExamAttempt(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     rejoins = models.PositiveIntegerField(default=0)  # times they came back through the link (wifi drop, etc.)
     last_rejoin_at = models.DateTimeField(null=True, blank=True)
+    # --- taking the exam (step 2c) ---
+    question_ids = models.JSONField(default=list, blank=True)  # this student's shuffled question order
+    started_at = models.DateTimeField(null=True, blank=True)
+    ends_at = models.DateTimeField(null=True, blank=True)       # personal deadline (the exam's end; extra time later)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    score = models.PositiveIntegerField(null=True, blank=True)
+    total_points = models.PositiveIntegerField(default=0)
 
     class Meta:
         unique_together = ['exam', 'user']
+
+
+class ExamAnswer(models.Model):
+    """The student's current choice for one question; overwritten as they change their mind (autosave)."""
+    attempt = models.ForeignKey(ExamAttempt, on_delete=models.CASCADE, related_name='answers')
+    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    choice = models.ForeignKey(Choice, on_delete=models.CASCADE)
+    saved_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['attempt', 'question']
 
 
 class ExamDenied(models.Model):

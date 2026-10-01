@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, teacher_views, exam_views
+from . import views, teacher_views, exam_views, exam_take
 from .forms import LoginForm
 from django.contrib.auth import views as auth_views
 
@@ -36,8 +36,14 @@ urlpatterns = [
     path('teach/exams/new/', teacher_views.exam_new, name='exam_new'),
     path('teach/exams/<int:pk>/', teacher_views.exam_detail, name='exam_detail'),
     path('teach/exams/<int:pk>/live/', teacher_views.exam_live, name='exam_live'),
+    path('teach/exams/<int:pk>/results/', teacher_views.exam_results, name='exam_results'),
+    path('teach/exams/<int:pk>/results/<int:attempt_pk>/', teacher_views.exam_result_detail, name='exam_result_detail'),
     path('exam/<str:token>/', exam_views.exam_entry, name='exam_entry'),
     path('exam/<str:token>/consent/', exam_views.exam_consent, name='exam_consent'),
     path('exam/<str:token>/lobby/', exam_views.exam_lobby, name='exam_lobby'),
     path('exam/<str:token>/status/', exam_views.exam_status, name='exam_status'),
+    path('exam/<str:token>/take/', exam_take.exam_take, name='exam_take'),
+    path('exam/<str:token>/answer/', exam_take.exam_answer, name='exam_answer'),
+    path('exam/<str:token>/submit/', exam_take.exam_submit, name='exam_submit'),
+    path('exam/<str:token>/done/', exam_take.exam_done, name='exam_done'),
 ]
