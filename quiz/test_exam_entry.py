@@ -135,9 +135,11 @@ class LobbyTests(ExamEntryBase):
         self.login(self.students[0])
         self.assertEqual(self.client.get(url).status_code, 404)
         self.enter(self.students[0])
-        self.assertEqual(self.client.get(url).json(), {'status': 'lobby'})
+        data = self.client.get(url).json()
+        self.assertEqual((data['status'], data['phase'], data['starts_at']), ('lobby', 'lobby', None))
+        self.assertIsInstance(data['now'], int)  # the server clock, in milliseconds
         Exam.objects.filter(pk=self.exam.pk).update(status=Exam.RUNNING)
-        self.assertEqual(self.client.get(url).json(), {'status': 'running'})
+        self.assertEqual(self.client.get(url).json()['phase'], 'running')  # open-style exam: no clock
 
     def test_status_poll_is_cheap(self):
         self.enter(self.students[0])
@@ -335,21 +337,21 @@ class RosterTests(ExamEntryBase):
         for s in self.students:
             ExamAllowed.objects.create(exam=self.exam, email=s.email)
         self.enter(self.students[1])
-        self.assertEqual(self._roster(), [('ab1000', False), ('ab1001', True), ('ab1002', False)])
+        self.assertEqual(self._roster(), [('ab1000', 'absent'), ('ab1001', 'lobby'), ('ab1002', 'absent')])
 
     def test_tick_appears_live_after_joining(self):
         ExamAllowed.objects.create(exam=self.exam, email=self.students[0].email)
-        self.assertEqual(self._roster(), [('ab1000', False)])
+        self.assertEqual(self._roster(), [('ab1000', 'absent')])
         self.enter(self.students[0])
         r = self.client.get(self.live) if self.login(self.teacher) is None else None
-        self.assertContains(r, '&#10003; ab1000')
+        self.assertContains(r, 'ab1000 &mdash; in lobby')
 
     def test_without_a_list_the_roster_is_the_joined_students_in_order(self):
         self.enter(self.students[1]); self.enter(self.students[0])
-        self.assertEqual(self._roster(), [('ab1001', True), ('ab1000', True)])
+        self.assertEqual(self._roster(), [('ab1001', 'lobby'), ('ab1000', 'lobby')])
 
     def test_roster_match_ignores_email_case(self):
         ExamAllowed.objects.create(exam=self.exam, email='ab1000@srmist.edu.in')
         self.enter(self.students[0])
         User.objects.filter(pk=self.students[0].pk).update(email='AB1000@SRMIST.EDU.IN')
-        self.assertEqual(self._roster(), [('ab1000', True)])
+        self.assertEqual(self._roster(), [('ab1000', 'lobby')])

@@ -7,10 +7,12 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
+from .exam_results import result_rows, result_summary, result_table
+from .exam_run import COUNTDOWN_SECONDS, end_exam, finalize_expired, start_exam
 from .exams import (QUESTION_ROWS, STUDENT_ROWS, create_questions, parse_allowed, parse_questions,
                     read_student_list, template_bytes)
 from .forms import ExamForm
-from .models import Exam, ExamAllowed, Question
+from .models import Exam, ExamAllowed, ExamAttempt, Question
 from .roles import role_of
 
 
@@ -67,7 +69,9 @@ def exam_detail(request, pk):
     exam = get_object_or_404(Exam, pk=pk, owner=request.user)  # only your own exams
     if request.method == 'POST':
         action = request.POST.get('action')
-        if action == 'seats' and exam.allowed.exists():
+        if action in ('seats', 'allow') and exam.phase() == Exam.ENDED:
+            messages.error(request, 'This exam has ended, so the class list and seats are locked.')
+        elif action == 'seats' and exam.allowed.exists():
             messages.error(request, 'This exam has a class list, so seats follow the list automatically.')
         elif action == 'seats':
             new = request.POST.get('seat_limit', '')
@@ -78,9 +82,18 @@ def exam_detail(request, pk):
             else:
                 messages.error(request, f'Enter a number higher than the current limit ({exam.seat_limit}).')
         elif action == 'open' and exam.status == Exam.DRAFT:
-            exam.status = Exam.LOBBY if exam.mode == Exam.SCHEDULED else Exam.RUNNING
-            exam.save(update_fields=['status'])
-            messages.success(request, 'Exam is now open for students.')
+            if not exam.questions.exists():
+                messages.error(request, 'This exam has no questions.')
+            else:
+                exam.status = Exam.LOBBY if exam.mode == Exam.SCHEDULED else Exam.RUNNING
+                exam.save(update_fields=['status'])
+                messages.success(request, 'Exam is now open for students.')
+        elif action == 'start' and exam.mode == Exam.SCHEDULED and exam.status == Exam.LOBBY:
+            start_exam(exam)
+            messages.success(request, f'Starting in {COUNTDOWN_SECONDS} seconds for everyone in the lobby.')
+        elif action == 'end' and exam.status in (Exam.LOBBY, Exam.RUNNING):
+            end_exam(exam)
+            messages.success(request, 'Exam ended. All answers so far were submitted.')
         elif action == 'allow':
             text, error = request.POST.get('students', ''), None
             if request.FILES.get('students_file'):
@@ -112,20 +125,32 @@ def exam_detail(request, pk):
 ROSTER_LIMIT = 300  # keeps the 5-second refresh light for big classes
 
 
+def _state(started_at, submitted_at):
+    return 'submitted' if submitted_at else 'answering' if started_at else 'lobby'
+
+
 def _roster(exam):
-    """[(name, joined)]: the class list with ticks, or (without a list) the students who have joined."""
+    """[(name, state)] with state: absent / lobby / answering / submitted.
+
+    The class list when there is one, otherwise the students who have joined, in join order.
+    """
+    rows = exam.attempts.values_list('user__email', 'user__username', 'started_at', 'submitted_at').order_by('created_at')
     if exam.allowed.exists():
-        joined = {e.lower() for e in exam.attempts.values_list('user__email', flat=True)}
+        state = {email.lower(): _state(s, d) for email, _, s, d in rows}
         emails = exam.allowed.order_by('email').values_list('email', flat=True)[:ROSTER_LIMIT]
-        return [(e.split('@')[0], e.lower() in joined) for e in emails]
-    names = exam.attempts.order_by('created_at').values_list('user__username', flat=True)[:ROSTER_LIMIT]
-    return [(n, True) for n in names]
+        return [(e.split('@')[0], state.get(e.lower(), 'absent')) for e in emails]
+    return [(name, _state(s, d)) for _, name, s, d in rows[:ROSTER_LIMIT]]
 
 
 def _live_context(exam):
+    finalize_expired(exam)  # anyone who ran out of time without pressing Submit is submitted now
+    attempts = exam.attempts
     return {
         'roster': _roster(exam),
         'exam': exam,
+        'phase': exam.phase(),
+        'started_count': attempts.filter(started_at__isnull=False).count(),
+        'submitted_count': attempts.filter(submitted_at__isnull=False).count(),
         'has_list': exam.allowed.exists(),
         'seats_used': exam.attempts.count(),
         # still turned away = tried but never got a seat
@@ -157,3 +182,46 @@ def question_template(request):
 @teacher_required
 def student_template(request):
     return _download(request, STUDENT_ROWS, 'student_list_template')
+
+
+@teacher_required
+def exam_results(request, pk):
+    exam = get_object_or_404(Exam, pk=pk, owner=request.user)
+    rows = result_rows(exam)
+    fmt = request.GET.get('format')
+    if fmt in ('csv', 'xlsx'):
+        data, content_type, ext = template_bytes(result_table(rows), fmt)
+        response = HttpResponse(data, content_type=content_type)
+        response['Content-Disposition'] = f'attachment; filename="results_{exam.pk}.{ext}"'
+        return response
+    return render(request, 'quiz/teacher/results.html', {
+        'exam': exam, 'rows': rows, 'summary': result_summary(rows), 'phase': exam.phase()})
+
+
+@teacher_required
+def exam_result_detail(request, pk, attempt_pk):
+    """One student's answers next to the correct ones, for the teacher to evaluate."""
+    exam = get_object_or_404(Exam, pk=pk, owner=request.user)
+    attempt = get_object_or_404(ExamAttempt, pk=attempt_pk, exam=exam)
+    finalize_expired(exam)
+    attempt.refresh_from_db()
+    chosen = {a.question_id: a.choice_id for a in attempt.answers.all()}
+    questions = {q.pk: q for q in Question.objects.filter(pk__in=attempt.question_ids).prefetch_related('choices')}
+    items = []
+    for qid in attempt.question_ids:
+        q = questions.get(qid)
+        if not q:
+            continue
+        choices = list(q.choices.all())
+        picked = next((c for c in choices if c.pk == chosen.get(qid)), None)
+        right = next((c for c in choices if c.is_correct), None)
+        items.append({'question': q, 'picked': picked, 'right': right,
+                      'state': 'unanswered' if picked is None else 'correct' if picked.is_correct else 'wrong'})
+    sections = {}
+    for item in items:  # same section order the student saw: 1-mark, 2-mark, ...
+        sections.setdefault(item['question'].points, []).append(item)
+    sections = [{'marks': marks, 'items': group,
+                 'earned': sum(i['question'].points for i in group if i['state'] == 'correct'),
+                 'possible': marks * len(group)} for marks, group in sorted(sections.items())]
+    return render(request, 'quiz/teacher/result_detail.html', {
+        'exam': exam, 'attempt': attempt, 'items': items, 'sections': sections})

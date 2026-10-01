@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>{{ attempt.user.username }}: {{ exam.title }}</h2>
+  <p><a href="{% url 'exam_results' exam.pk %}">Back to results</a></p>
+  {% if attempt.submitted_at %}
+    <p>Score: <strong>{{ attempt.score }} / {{ attempt.total_points }}</strong>. Submitted at {{ attempt.submitted_at|time:"H:i:s" }}.</p>
+  {% else %}
+    <p>Not submitted yet. These are the answers saved so far.</p>
+  {% endif %}
+
+  {% for section in sections %}
+  <h3>{{ section.marks }}-mark questions: {{ section.earned }} / {{ section.possible }}</h3>
+  <ol>
+  {% for item in section.items %}
+    <li style="margin-bottom:12px;">
+      {{ item.question.text }}
+      <span style="font-weight:bold;color:{% if item.state == 'correct' %}#1e7e34{% elif item.state == 'wrong' %}#c0392b{% else %}#888{% endif %};">
+        {% if item.state == 'correct' %}&#10003; correct ({{ item.question.points }}){% elif item.state == 'wrong' %}&#10007; wrong{% else %}&ndash; not answered{% endif %}
+      </span><br>
+      {% if item.picked %}Chose: <em>{{ item.picked.text }}</em><br>{% endif %}
+      {% if item.state != 'correct' and item.right %}Correct answer: <em>{{ item.right.text }}</em>{% endif %}
+    </li>
+  {% endfor %}
+  </ol>
+  {% endfor %}
+</div>
+{% endblock %}

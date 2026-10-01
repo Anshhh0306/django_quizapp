@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="auth-form-container">
+    <h2>{{ exam.title }}</h2>
+    {% if not started %}
+      <p>You did not start this exam.</p>
+    {% else %}
+      <p>Your exam has been submitted{% if attempt.submitted_at %} at {{ attempt.submitted_at|time:"H:i" }}{% endif %}. Your answers are saved.</p>
+      {% if show_score %}
+        <h3>Your score: {{ attempt.score }} / {{ attempt.total_points }}</h3>
+        <h4>Your answers</h4>
+        <ol>{% for question, choice in selections %}<li>{{ question }}<br><em>{{ choice }}</em></li>{% endfor %}</ol>
+      {% else %}
+        <p>Your score will be shown here after the exam has ended for everyone.</p>
+      {% endif %}
+    {% endif %}
+    <p><a href="{% url 'home' %}">Back to home</a></p>
+  </div>
+</div>
+{% endblock %}

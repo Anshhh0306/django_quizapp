@@ -10,7 +10,19 @@
     {% for field in form %}
       <div class="form-field">
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
+        {% if field.name == 'questions' %}
+          {% for marks, boxes in form.question_groups %}
+          <fieldset style="margin:8px 0;border:1px solid #ccc;padding:8px;">
+            <legend><strong>{{ marks }}-mark questions ({{ boxes|length }})</strong>
+              <a href="#" class="select-all" style="font-size:.85rem;margin-left:8px;">select all / none</a></legend>
+            {% for box in boxes %}
+              <div>{{ box.tag }} <label for="{{ box.id_for_label }}">{{ box.choice_label }}</label></div>
+            {% endfor %}
+          </fieldset>
+          {% endfor %}
+        {% else %}
+          {{ field }}
+        {% endif %}
         {% if field.help_text %}<small class="help-text">{{ field.help_text }}</small>{% endif %}
         {% for e in field.errors %}<div class="error">{{ e }}</div>{% endfor %}
       </div>
@@ -22,4 +34,15 @@
   <p>Student list template: <a href="{% url 'student_template' %}">CSV</a> | <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
   <p><a href="{% url 'teach_home' %}">Back</a></p>
 </div>
+<script>
+  // "select all / none" for one marks section
+  document.querySelectorAll('.select-all').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const boxes = link.closest('fieldset').querySelectorAll('input[type=checkbox]');
+      const allOn = [...boxes].every((b) => b.checked);
+      boxes.forEach((b) => { b.checked = !allOn; });
+    });
+  });
+</script>
 {% endblock %}

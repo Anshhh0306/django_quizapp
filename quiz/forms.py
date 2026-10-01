@@ -72,6 +72,13 @@ class ExamForm(forms.ModelForm):
         self.fields['seat_limit'].help_text = ('Only needed without a class list. '
                                                'With a class list, every listed student automatically has a seat.')
 
+    def question_groups(self):
+        """[(marks, [checkbox, ...])] so the picker shows 1-mark, 2-mark, ... sections instead of one long list."""
+        groups = {}
+        for box in self['questions']:
+            groups.setdefault(box.data['value'].instance.points, []).append(box)
+        return sorted(groups.items())
+
     def clean(self):
         data = super().clean()
         if data.get('mode') == Exam.SCHEDULED and not data.get('duration_minutes'):

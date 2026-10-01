@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from .models import Question, Choice, UserQuiz, Category, UserAnswer
 from .forms import RegisterForm
 from .ratelimit import rate_limit
+from .exam_results import my_exam_cards
 from .roles import is_student, role_of
 from functools import wraps
 from django.contrib.auth import login as auth_login
@@ -104,6 +105,7 @@ def home(request):
             except UserQuiz.DoesNotExist:
                 category.completed = False
         context['categories'] = categories
+        context['my_exams'] = my_exam_cards(request.user)
     return render(request, 'quiz/home.html', context)
 
 @student_required

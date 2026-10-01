@@ -1,16 +1,24 @@
 <ul>
-  <li>Status: {{ exam.status }}</li>
+  <li>Status: <strong>{{ phase }}</strong>{% if exam.starts_at %} &mdash; starts {{ exam.starts_at|time:"H:i:s" }}, ends {{ exam.ends_at|time:"H:i:s" }}{% endif %}</li>
   <li>Seats:
     {% if has_list %}{{ seats_used }} of {{ exam.seat_limit }} listed students have joined
     {% else %}{{ seats_used }} of {{ exam.seat_limit }} taken{% endif %}
   </li>
+  {% if phase == 'running' or phase == 'ended' %}
+  <li>Answering or finished: {{ started_count }} started, {{ submitted_count }} submitted</li>
+  {% endif %}
 </ul>
 
-<h3>{% if has_list %}Class list: who has joined{% else %}Joined{% endif %}</h3>
+<h3>{% if has_list %}Class list{% else %}Joined{% endif %}</h3>
 {% if roster %}
 <ul style="list-style:none;padding:0;">
-  {% for name, joined in roster %}
-  <li style="padding:2px 8px;{% if joined %}background:#d4edda;{% else %}color:#888;{% endif %}">{% if joined %}&#10003;{% else %}&#9675;{% endif %} {{ name }}</li>
+  {% for name, state in roster %}
+  <li style="padding:2px 8px;{% if state == 'absent' %}color:#888;{% elif state == 'submitted' %}background:#cfe2ff;{% elif state == 'answering' %}background:#fff3cd;{% else %}background:#d4edda;{% endif %}">
+    {% if state == 'absent' %}&#9675; {{ name }} &mdash; not joined
+    {% elif state == 'lobby' %}&#10003; {{ name }} &mdash; in lobby
+    {% elif state == 'answering' %}&#9998; {{ name }} &mdash; answering
+    {% else %}&#10004; {{ name }} &mdash; submitted{% endif %}
+  </li>
   {% endfor %}
 </ul>
 {% if roster|length >= 300 %}<p><small>Showing the first 300.</small></p>{% endif %}

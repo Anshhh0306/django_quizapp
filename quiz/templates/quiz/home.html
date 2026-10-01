@@ -37,6 +37,20 @@
     </div>
     {% else %}
     <div class="dashboard">
+      {% if my_exams %}
+      <h2>My exams</h2>
+      <div class="quiz-grid">
+        {% for e in my_exams %}
+        <div class="quiz-card">
+          <h3>{{ e.title }}</h3>
+          <p>{{ e.state }}</p>
+          {% if e.score is not None %}<div class="quiz-score">Score: {{ e.score }} / {{ e.total }}</div>
+          {% elif e.waiting_for_scores %}<p><em>Your score appears here once the exam has ended for everyone.</em></p>{% endif %}
+          <a href="{{ e.url }}" class="btn btn-view">{% if e.state == 'Submitted' or e.state|slice:':5' == 'Ended' %}View result{% else %}Open{% endif %}</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       <p>Choose of category and embark your learning journey!</p>
 
       <h2>Available Quizzes</h2>

@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import F
@@ -8,7 +10,10 @@ from django.utils import timezone
 from .models import Exam, ExamAttempt, ExamDenied
 from .roles import is_student
 
+MOBILE_RE = re.compile(r'Mobi|Android|iPhone|iPad|iPod', re.I)
+
 MESSAGES = {
+    'mobile': ('Use a laptop or desktop', 'Scheduled exams need a laptop or desktop computer with a full browser. Open the link there.'),
     'not_student': ('Students only', 'Only student accounts can take exams.'),
     'draft': ('Not open yet', 'This exam is not open yet. Try again when your teacher says it is open.'),
     'ended': ('Exam ended', 'This exam has ended.'),
@@ -22,13 +27,19 @@ def _notice(request, reason):
     return render(request, 'quiz/exam/notice.html', {'title': title, 'message': message})
 
 
+def mobile_blocked(request, exam):
+    """Scheduled exams are laptop/desktop only (phones can't hold fullscreen). A soft check: the user agent can be faked."""
+    return exam.mode == Exam.SCHEDULED and bool(MOBILE_RE.search(request.META.get('HTTP_USER_AGENT', '')))
+
+
 def admission_problem(exam, user):
     """Why this student cannot take a NEW seat right now, or None. Does not claim anything."""
     if not is_student(user):
         return 'not_student'
-    if exam.status == Exam.DRAFT:
+    phase = exam.phase()
+    if phase == Exam.DRAFT:
         return 'draft'
-    if exam.status == Exam.ENDED:
+    if phase == Exam.ENDED:
         return 'ended'
     if exam.allowed.exists():  # class list: every listed student has a seat, no counting
         if not exam.allowed.filter(email=user.email.lower()).exists():
@@ -72,6 +83,8 @@ def exam_entry(request, token):
     exam = get_object_or_404(Exam, token=token)
     if not is_student(request.user):
         return _notice(request, 'not_student')
+    if mobile_blocked(request, exam):
+        return _notice(request, 'mobile')
     attempt = _attempt(exam, request.user)
     if attempt:  # already has a seat: let them straight back in and flag it for the teacher
         ExamAttempt.objects.filter(pk=attempt.pk).update(rejoins=F('rejoins') + 1, last_rejoin_at=timezone.now())
@@ -87,6 +100,8 @@ def exam_consent(request, token):
     exam = get_object_or_404(Exam, token=token)
     if not is_student(request.user):
         return _notice(request, 'not_student')
+    if mobile_blocked(request, exam):
+        return _notice(request, 'mobile')
     if _attempt(exam, request.user):
         return redirect('exam_lobby', token=token)
     problem = admission_problem(exam, request.user)
@@ -105,15 +120,31 @@ def exam_consent(request, token):
 @login_required
 def exam_lobby(request, token):
     exam = get_object_or_404(Exam, token=token)
-    if not _attempt(exam, request.user):
+    attempt = _attempt(exam, request.user)
+    if not attempt:
         return redirect('exam_entry', token=token)
+    if attempt.submitted_at:
+        return redirect('exam_done', token=token)
     return render(request, 'quiz/exam/lobby.html', {'exam': exam})
+
+
+def _ms(dt):
+    return int(dt.timestamp() * 1000)
 
 
 @login_required
 def exam_status(request, token):
-    """Polled by the lobby every few seconds. Deliberately tiny: one exam lookup, one attempt check."""
+    """Polled by the lobby every few seconds. Deliberately tiny: one exam lookup, one attempt check.
+
+    Sends the server's own clock ('now') so the countdown never trusts the student's computer clock.
+    """
     exam = get_object_or_404(Exam, token=token)
     if not _attempt(exam, request.user):
         raise Http404
-    return JsonResponse({'status': exam.status})
+    now = timezone.now()
+    return JsonResponse({
+        'status': exam.status,
+        'phase': exam.phase(now),
+        'now': _ms(now),
+        'starts_at': _ms(exam.starts_at) if exam.starts_at else None,
+    })

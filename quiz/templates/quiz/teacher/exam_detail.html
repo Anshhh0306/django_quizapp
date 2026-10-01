@@ -2,7 +2,7 @@
 {% block content %}
 <div class="container">
   <h2>{{ exam.title }}</h2>
-  <p><a href="{% url 'teach_home' %}">Back</a></p>
+  <p><a href="{% url 'teach_home' %}">Back</a> | <a href="{% url 'exam_results' exam.pk %}" class="btn btn-view">View results</a></p>
   {% if messages %}{% for m in messages %}<div>{{ m }}</div>{% endfor %}{% endif %}
 
   <p><strong>Exam link (share with students):</strong><br><code>{{ link }}</code></p>
@@ -20,9 +20,28 @@
   </form>
   {% endif %}
 
+  {% if exam.status == 'lobby' and exam.mode == 'scheduled' %}
+  <form method="post" class="simple-form" onsubmit="return confirm('Start the exam for everyone in the lobby? It cannot be undone.');">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="start">
+    <button type="submit" class="btn btn-create">Start exam (30 second countdown)</button>
+  </form>
+  {% endif %}
+  {% if exam.status == 'lobby' or exam.status == 'running' %}
+  <form method="post" class="simple-form" onsubmit="return confirm('End the exam now? Everyone\'s answers so far will be submitted.');">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="end">
+    <button type="submit" class="btn">{% if exam.mode == 'open' %}Close exam{% else %}End exam now{% endif %}</button>
+  </form>
+  {% endif %}
+
   <div id="live">{% include "quiz/teacher/_exam_live.html" %}</div>
 
-  {% if not has_list %}
+  {% if phase == 'ended' %}
+  <p><em>This exam has ended. The class list and seats are locked. <a href="{% url 'exam_results' exam.pk %}">See the results.</a></em></p>
+  {% endif %}
+
+  {% if not has_list and phase != 'ended' %}
   <h3>Raise seat limit</h3>
   <form method="post" class="simple-form">
     {% csrf_token %}
@@ -38,6 +57,7 @@
   {% else %}
     <p>No class list: anyone with the link can enter, up to the seat limit.</p>
   {% endif %}
+  {% if phase != 'ended' %}
   <form method="post" enctype="multipart/form-data" class="simple-form">
     {% csrf_token %}
     <input type="hidden" name="action" value="allow">
@@ -45,6 +65,7 @@
     <p>Or upload a file (CSV or Excel): <input type="file" name="students_file" accept=".csv,.xlsx"> Template: <a href="{% url 'student_template' %}">CSV</a> | <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
     <button type="submit" class="btn btn-create">Add students</button>
   </form>
+  {% endif %}
 </div>
 
 <script>
