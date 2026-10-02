@@ -1,45 +1,70 @@
 from django import forms
 from django.contrib.auth.models import User
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.admin.forms import AdminAuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.hashers import UNUSABLE_PASSWORD_PREFIX
 from django.core.exceptions import ValidationError
 from .exams import parse_allowed, read_student_list, read_upload
 from .models import Exam, Question
+from .ratelimit import login_blocked, login_failed, login_succeeded
 from .roles import STUDENT_RE, STAFF_RE
 
-class RegisterForm(UserCreationForm):
+def pending_account(email):
+    """An account that registered but has not clicked its email link yet. Such an account has NO password until
+    then, which is what tells it apart from one a superadmin deactivated (that one still has a password)."""
+    return User.objects.filter(email__iexact=email, is_active=False,
+                               password__startswith=UNUSABLE_PASSWORD_PREFIX).first()
+
+
+class RegisterForm(forms.Form):
+    """Only the email: the password is chosen AFTER the emailed link is clicked, so nobody can register
+    someone else's address with a password of their own and wait for the owner to confirm it."""
     email = forms.EmailField(required=True)
 
-    class Meta:
-        model = User
-        fields = ("email", "password1", "password2")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pending = None
+        self.fields['email'].help_text = "Students: AD3919@srmist.edu.in. Staff: name@srmist.edu.in (needs admin approval)."
 
     def clean_email(self):
         email = self.cleaned_data['email'].strip().lower()
         if not (STUDENT_RE.match(email) or STAFF_RE.match(email)):
             raise ValidationError(
                 "Use your SRMIST email: students like AD3919@srmist.edu.in, staff like name@srmist.edu.in")
-        username = email.split('@')[0]
-        if (User.objects.filter(email__iexact=email).exists()
-                or User.objects.filter(username__iexact=username).exists()):
-            raise ValidationError("This email address is already registered.")
-        self.instance.username = username  # login name = the part before the @
+        self.pending = pending_account(email)  # registering again just sends the verification email again
+        if not self.pending and (User.objects.filter(email__iexact=email).exists()
+                                 or User.objects.filter(username__iexact=email.split('@')[0]).exists()):
+            raise ValidationError("This email address is already registered. Try logging in, or reset your password.")
         return email
 
-    def save(self, commit=True):
-        user = super().save(commit=False)
-        user.email = self.cleaned_data['email']
-        user.is_active = False  # User won't be able to login until email is verified
-        if commit:
-            user.save()
+    def save(self):
+        if self.pending:
+            return self.pending
+        email = self.cleaned_data['email']
+        user = User(username=email.split('@')[0], email=email, is_active=False)  # login name = the part before the @
+        user.set_unusable_password()
+        user.save()
         return user
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['email'].help_text = "Students: AD3919@srmist.edu.in. Staff: name@srmist.edu.in (needs admin approval)."
-        self.fields['password1'].help_text = "Choose a secure password with at least 8 characters"
+
+class LoginThrottleMixin:
+    """Locks a login for 15 minutes after repeated wrong passwords (counted per account+address, and per address)."""
+
+    def clean(self):
+        username = self.cleaned_data.get('username', '')
+        ip = self.request.META.get('REMOTE_ADDR') if getattr(self, 'request', None) else None
+        if login_blocked(username, ip):
+            raise ValidationError('Too many failed login attempts. Please wait 15 minutes and try again.', code='locked')
+        try:
+            cleaned = super().clean()
+        except ValidationError:
+            login_failed(username, ip)
+            raise
+        login_succeeded(username, ip)
+        return cleaned
 
 
-class LoginForm(AuthenticationForm):
+class LoginForm(LoginThrottleMixin, AuthenticationForm):
     """Log in with username or email, in any letter case (AD3919, ad3919, ad3919@srmist.edu.in)."""
 
     def clean_username(self):
@@ -104,3 +129,7 @@ class ExamForm(forms.ModelForm):
         elif not data.get('seat_limit'):
             self.add_error('seat_limit', 'Enter a seat limit, or add a class list.')
         return data
+
+
+class AdminLoginForm(LoginThrottleMixin, AdminAuthenticationForm):
+    """The same lockout on /admin/login/, which is the most valuable door to guess at."""

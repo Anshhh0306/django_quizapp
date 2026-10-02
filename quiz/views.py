@@ -4,13 +4,15 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import Question, Choice, UserQuiz, Category, UserAnswer
-from .forms import RegisterForm
+from .forms import RegisterForm, pending_account
 from .ratelimit import rate_limit
 from .exam_results import my_exam_cards
 from .roles import is_student, role_of
 from .util import to_int
 from functools import wraps
 from django.contrib.auth import login as auth_login
+from django.contrib.auth.forms import SetPasswordForm
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Avg
 from .models import UserStatistics
 
@@ -40,44 +42,66 @@ def _send_verification_email(request, user):
     send_mail(
         'Verify your SRMIST email address',
         message,
-        'noreply@quizplatform.com',
+        settings.DEFAULT_FROM_EMAIL,
         [user.email],
         fail_silently=False,
     )
 
-@rate_limit('register', 10, 3600)
+def _try_send_verification(request, user):
+    """True if the email went out. A mail-server problem must not turn into a crash page."""
+    try:
+        _send_verification_email(request, user)
+        return True
+    except OSError:  # smtplib.SMTPException is an OSError too
+        return False
+
+@rate_limit('register', 200, 3600, field='email', field_limit=3)
 def register(request):
     if request.method == 'POST':
         form = RegisterForm(request.POST)
         if form.is_valid():
-            user = form.save()
-            _send_verification_email(request, user)
-            return render(request, 'quiz/verification_sent.html', {'email': user.email})
+            try:
+                with transaction.atomic():
+                    user = form.save()
+            except IntegrityError:  # two people registered the same address at the same moment
+                form.add_error('email', 'This email address is already registered. Try logging in, or reset your password.')
+            else:
+                if not _try_send_verification(request, user):
+                    form.add_error('email', 'We could not send the email right now. Please try again in a few minutes.')
+                else:
+                    return render(request, 'quiz/verification_sent.html', {'email': user.email})
     else:
         form = RegisterForm()
     return render(request, 'quiz/register.html', {'form': form})
 
-def verify_email(request, uidb64, token):
+def _pending_user(uidb64, token):
+    """The account this link belongs to, if it is still waiting for its first password. Anything else (already
+    active, or an account a superadmin deactivated, which has a password) can never be activated by a link."""
     try:
-        uid = force_str(urlsafe_base64_decode(uidb64))
-        user = User.objects.get(pk=uid)
+        user = User.objects.get(pk=force_str(urlsafe_base64_decode(uidb64)))
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-        user = None
+        return None
+    if user.is_active or user.has_usable_password():
+        return None
+    return user if email_verification_token.check_token(user, token) else None
 
-    if user is not None and email_verification_token.check_token(user, token):
-        user.is_active = True
-        user.save()
-        return render(request, 'quiz/verification_success.html',
-                      {'pending_teacher': not is_student(user)})
-    else:
+def verify_email(request, uidb64, token):
+    """The emailed link proves the inbox is theirs; this page is where they choose their password."""
+    user = _pending_user(uidb64, token)
+    if user is None:
         return render(request, 'quiz/verification_failed.html')
+    form = SetPasswordForm(user, request.POST if request.method == 'POST' else None)
+    if request.method == 'POST' and form.is_valid():
+        user.is_active = True
+        form.save()  # sets the password and saves the account
+        return render(request, 'quiz/verification_success.html', {'pending_teacher': not is_student(user)})
+    return render(request, 'quiz/verification_set_password.html', {'form': form})
 
-@rate_limit('resend', 5, 3600, field='email')
+@rate_limit('resend', 200, 3600, field='email', field_limit=5)
 def resend_verification(request):
     if request.method == 'POST':
-        user = User.objects.filter(email__iexact=request.POST.get('email', ''), is_active=False).first()
-        if user:
-            _send_verification_email(request, user)
+        user = pending_account(request.POST.get('email', '').strip())
+        if user and _try_send_verification(request, user):
             return render(request, 'quiz/verification_sent.html', {'email': user.email})
     return redirect('register')
 
@@ -526,67 +550,32 @@ def quiz_review(request, category_id):
 from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.tokens import default_token_generator
 
-@rate_limit('pwreset', 5, 3600, field='email')
+@rate_limit('pwreset', 200, 3600, field='email', field_limit=5)
 def custom_password_reset(request):
-    """Custom password reset that integrates with SRMIST email verification"""
+    """Sends a reset link to verified SRMIST accounts. The page shown is identical whether or not an email was
+    sent, so it cannot be used to find out which addresses have accounts."""
     if request.method == 'POST':
         form = PasswordResetForm(request.POST)
         if form.is_valid():
             email = form.cleaned_data['email']
-            
-            # Check if user exists and has SRMIST email
-            try:
-                user = User.objects.get(email__iexact=email)
-                
-                # Verify it's a SRMIST email
-                if not email.lower().endswith('@srmist.edu.in'):
-                    return render(request, 'quiz/password_reset.html', {
-                        'form': form,
-                        'error': 'Password reset is only available for SRMIST email addresses (@srmist.edu.in)'
-                    })
-                
-                # Check if user is verified
-                if not user.is_active:
-                    return render(request, 'quiz/password_reset.html', {
-                        'form': form,
-                        'error': 'Your email address is not verified. Please verify your email first.'
-                    })
-                
-                # Generate password reset token using our verification system
-                mail_subject = 'Password Reset - SRMIST Quiz Platform'
+            user = User.objects.filter(email__iexact=email, is_active=True).first()
+            if user and user.email.lower().endswith('@srmist.edu.in'):
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
                 token = default_token_generator.make_token(user)
-                reset_url = request.build_absolute_uri(
-                    reverse('password_reset_confirm', args=[uid, token]))
-                
+                reset_url = request.build_absolute_uri(reverse('password_reset_confirm', args=[uid, token]))
                 message = render_to_string('quiz/email/password_reset_email.txt', {
                     'user': user,
                     'reset_url': reset_url,
                     'site_name': 'SRMIST Quiz Platform',
                 })
-                
-                # Send password reset email using our system
-                send_mail(
-                    mail_subject,
-                    message,
-                    settings.DEFAULT_FROM_EMAIL,
-                    [user.email],
-                    fail_silently=False,
-                )
-                
-                return render(request, 'quiz/password_reset_done.html', {
-                    'email': user.email
-                })
-                
-            except User.DoesNotExist:
-                # Don't reveal if email exists or not for security
-                return render(request, 'quiz/password_reset_done.html', {
-                    'email': email
-                })
-                
+                try:
+                    send_mail('Password Reset - SRMIST Quiz Platform', message, settings.DEFAULT_FROM_EMAIL,
+                              [user.email], fail_silently=False)
+                except OSError:
+                    pass  # same page either way; the person can simply try again
+            return render(request, 'quiz/password_reset_done.html', {'email': email})
     else:
         form = PasswordResetForm()
-    
     return render(request, 'quiz/password_reset.html', {'form': form})
 
 def custom_password_reset_confirm(request, uidb64, token):
@@ -597,7 +586,7 @@ def custom_password_reset_confirm(request, uidb64, token):
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
         user = None
 
-    if user is not None and default_token_generator.check_token(user, token):
+    if user is not None and user.is_active and default_token_generator.check_token(user, token):
         # Valid token, show password reset form
         if request.method == 'POST':
             from django.contrib.auth.forms import SetPasswordForm
