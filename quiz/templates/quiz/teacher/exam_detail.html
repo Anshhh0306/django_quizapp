@@ -35,6 +35,8 @@
   </form>
   {% endif %}
 
+  <div id="controls">{% include "quiz/teacher/_exam_controls.html" with exam=exam frozen=controls.frozen taking=controls.taking minutes=controls.minutes extend_minutes=controls.extend_minutes can_extend_all=controls.can_extend_all sig=controls.sig %}</div>
+
   <div id="live">{% include "quiz/teacher/_exam_live.html" %}</div>
 
   {% if phase == 'ended' %}
@@ -76,6 +78,27 @@
     fetch("{% url 'exam_live' exam.pk %}", {credentials: 'same-origin'})
       .then(r => r.ok ? r.text() : null)
       .then(html => { if (html !== null) live.innerHTML = html; });
+
+    // Frozen seats and extra-time boxes: only swapped in when something changed, and never while you are using them.
+    const controls = document.getElementById('controls');
+    fetch("{% url 'exam_controls' exam.pk %}", {credentials: 'same-origin'})
+      .then(r => r.ok ? r.text() : null)
+      .then(html => {
+        if (html === null || controls.contains(document.activeElement)) return;
+        const next = document.createElement('div');
+        next.innerHTML = html;
+        const current = controls.firstElementChild;
+        if (!current || next.firstElementChild.dataset.sig !== current.dataset.sig) {
+          // remember what was chosen in each dropdown, and put it back after the panel is rebuilt
+          const chosen = {};
+          controls.querySelectorAll('form[data-key] select').forEach((s) => { chosen[s.form.dataset.key + '/' + s.name] = s.value; });
+          controls.innerHTML = html;
+          controls.querySelectorAll('form[data-key] select').forEach((s) => {
+            const old = chosen[s.form.dataset.key + '/' + s.name];
+            if (old !== undefined && [...s.options].some((o) => o.value === old)) s.value = old;
+          });
+        }
+      });
   }, 5000);
 </script>
 {% endblock %}

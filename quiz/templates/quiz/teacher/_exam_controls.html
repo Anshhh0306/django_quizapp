@@ -1,0 +1,64 @@
+<div data-sig="{{ sig }}">
+{% if frozen %}
+<div style="border:2px solid #c0392b;padding:10px;margin:12px 0;background:#fdecea;">
+  <h3 style="margin-top:0;">Frozen: needs you ({{ frozen|length }})</h3>
+  <p><small>Their clock keeps running. Look at the two devices, choose which one may continue, and add extra time if it was not their fault.</small></p>
+  {% for a in frozen %}
+  <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="unfreeze-{{ a.pk }}" style="border-top:1px solid #e0b4af;padding:8px 0;"
+        onsubmit="return confirm('Unfreeze {{ a.user.username }}? The device you did NOT choose will be turned away.');">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="unfreeze">
+    <input type="hidden" name="attempt" value="{{ a.pk }}">
+    <strong>{{ a.user.username }}</strong> (frozen at {{ a.frozen_at|time:"H:i:s" }}{% if a.freezes > 1 %}, {{ a.freezes }} times{% endif %})<br>
+    <label>Allow:
+      <select name="device">
+        <option value="original">Original: {{ a.device_label }}{% if a.device_ip %} ({{ a.device_ip }}){% endif %}</option>
+        <option value="new">New: {{ a.challenger_label }}{% if a.challenger_ip %} ({{ a.challenger_ip }}){% endif %}</option>
+      </select>
+    </label>
+    <label>Extra time:
+      <select name="minutes">{% for m in minutes %}<option value="{{ m }}">{% if m == 0 %}none{% else %}{{ m }} min{% endif %}</option>{% endfor %}</select>
+    </label>
+    <button type="submit" class="btn btn-create">Unfreeze</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if taking and exam.mode == 'scheduled' %}
+<div style="margin:12px 0;">
+  <h3>Give extra time</h3>
+  <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="extra">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="extra_time">
+    <select name="attempt">{% for a in taking %}<option value="{{ a.pk }}">{{ a.user.username }}</option>{% endfor %}</select>
+    <select name="minutes">{% for m in minutes %}{% if m %}<option value="{{ m }}">{{ m }} min</option>{% endif %}{% endfor %}</select>
+    <button type="submit" class="btn btn-create">Give time</button>
+  </form>
+</div>
+{% endif %}
+
+{% if taking and exam.mode == 'scheduled' %}
+<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="reset" style="margin:12px 0;"
+      onsubmit="return confirm('Clear the device lock for this student? The NEXT device that opens the exam will be accepted, so only do this if their own device is really gone.');">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="reset_device">
+  <label>Student's device is gone, let a new one in:
+    <select name="attempt">{% for a in taking %}<option value="{{ a.pk }}">{{ a.user.username }}</option>{% endfor %}</select>
+  </label>
+  <button type="submit" class="btn">Reset device lock</button>
+</form>
+{% endif %}
+
+{% if can_extend_all %}
+<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="extendall" style="margin:12px 0;"
+      onsubmit="return confirm('Give EVERYONE still taking the exam this extra time?');">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="extend_all">
+  <label>Emergency: extend for everyone
+    <select name="minutes">{% for m in extend_minutes %}<option value="{{ m }}">{{ m }} min</option>{% endfor %}</select>
+  </label>
+  <button type="submit" class="btn">Extend everyone</button>
+</form>
+{% endif %}
+</div>

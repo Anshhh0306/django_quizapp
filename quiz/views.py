@@ -8,6 +8,7 @@ from .forms import RegisterForm
 from .ratelimit import rate_limit
 from .exam_results import my_exam_cards
 from .roles import is_student, role_of
+from .util import to_int
 from functools import wraps
 from django.contrib.auth import login as auth_login
 from django.db.models import Count, Avg
@@ -219,8 +220,8 @@ def question_view(request):
 
     choice_id = request.POST.get('choice', '')
     choice = None
-    if choice_id.isdigit():  # must belong to this question
-        choice = Choice.objects.filter(pk=choice_id, question=question).first()
+    if to_int(choice_id) is not None:  # must belong to this question
+        choice = Choice.objects.filter(pk=to_int(choice_id), question=question).first()
     correct_choice = question.choices.filter(is_correct=True).first()
 
     # Anti-cheat early submission: score what was answered and end the quiz

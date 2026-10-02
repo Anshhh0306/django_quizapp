@@ -1,12 +1,14 @@
 import re
 
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.cache import never_cache
 from django.db import transaction
 from django.db.models import F
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from .exam_device import bind_device
 from .models import Exam, ExamAttempt, ExamDenied
 from .roles import is_student
 
@@ -78,6 +80,7 @@ def _attempt(exam, user):
     return ExamAttempt.objects.filter(exam=exam, user=user).first()
 
 
+@never_cache
 @login_required
 def exam_entry(request, token):
     exam = get_object_or_404(Exam, token=token)
@@ -95,6 +98,7 @@ def exam_entry(request, token):
     return redirect('exam_consent', token=token)
 
 
+@never_cache
 @login_required
 def exam_consent(request, token):
     exam = get_object_or_404(Exam, token=token)
@@ -117,6 +121,7 @@ def exam_consent(request, token):
     return render(request, 'quiz/exam/consent.html', {'exam': exam})
 
 
+@never_cache
 @login_required
 def exam_lobby(request, token):
     exam = get_object_or_404(Exam, token=token)
@@ -125,6 +130,8 @@ def exam_lobby(request, token):
         return redirect('exam_entry', token=token)
     if attempt.submitted_at:
         return redirect('exam_done', token=token)
+    if not attempt.started_at:
+        bind_device(request, attempt)  # in the lobby the newest browser wins; the lock starts with the exam
     return render(request, 'quiz/exam/lobby.html', {'exam': exam})
 
 
@@ -132,6 +139,7 @@ def _ms(dt):
     return int(dt.timestamp() * 1000)
 
 
+@never_cache
 @login_required
 def exam_status(request, token):
     """Polled by the lobby every few seconds. Deliberately tiny: one exam lookup, one attempt check.

@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.core.exceptions import ValidationError
-from .exams import parse_allowed, read_student_list
+from .exams import parse_allowed, read_student_list, read_upload
 from .models import Exam, Question
 from .roles import STUDENT_RE, STAFF_RE
 
@@ -85,10 +85,14 @@ class ExamForm(forms.ModelForm):
             self.add_error('duration_minutes', 'Duration is required for a scheduled exam.')
         if data.get('mode') == Exam.OPEN:
             data['duration_minutes'] = None  # open exams have no timer
+        if (data.get('duration_minutes') or 0) > 600:
+            self.add_error('duration_minutes', 'An exam can last at most 600 minutes (10 hours).')
+        if (data.get('seat_limit') or 0) > 100_000:
+            self.add_error('seat_limit', 'The seat limit can be at most 100,000.')
         text = data.get('allowed_text', '')
         if data.get('allowed_file'):
             try:
-                text += '\n' + read_student_list(data['allowed_file'].read(), data['allowed_file'].name)
+                text += '\n' + read_student_list(read_upload(data['allowed_file']), data['allowed_file'].name)
             except ValueError as e:
                 self.add_error('allowed_file', str(e))
         emails, bad = parse_allowed(text)

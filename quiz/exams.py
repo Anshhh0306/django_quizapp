@@ -1,15 +1,19 @@
 import csv
 import io
 import re
+import zipfile
 
 from openpyxl import Workbook, load_workbook
 
 from .models import Choice, Question
 from .roles import STUDENT_RE
+from .util import to_int
 
 MAX_ROWS = 500          # questions per upload
 MAX_STUDENTS = 20000    # class list rows per upload
 MAX_BYTES = 1_000_000
+MAX_UNPACKED_BYTES = 20_000_000  # an .xlsx is a zip: a tiny file can unpack into gigabytes
+MAX_COLUMNS = 30
 LETTERS = 'ABCD'
 
 QUESTION_ROWS = [
@@ -40,8 +44,15 @@ def read_table(raw, filename='', max_rows=MAX_ROWS + 2):
     rows = []
     if name.endswith('.xlsx'):
         try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                unpacked = sum(info.file_size for info in archive.infolist())
+        except zipfile.BadZipFile:
+            raise ValueError('Could not read the Excel file. Save it again as .xlsx or CSV UTF-8.')
+        if unpacked > MAX_UNPACKED_BYTES:
+            raise ValueError('The Excel file is too large once opened (max 20 MB). Delete unused rows and columns and try again.')
+        try:
             book = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-            for row in book.worksheets[0].iter_rows(values_only=True):  # first sheet only
+            for row in book.worksheets[0].iter_rows(max_col=MAX_COLUMNS, values_only=True):  # first sheet, first columns
                 rows.append([_cell(c) for c in row])
                 if len(rows) >= max_rows:
                     break
@@ -58,6 +69,13 @@ def read_table(raw, filename='', max_rows=MAX_ROWS + 2):
     except (UnicodeDecodeError, csv.Error):
         raise ValueError('File must be UTF-8 CSV or .xlsx (in Excel: Save As, "CSV UTF-8").')
     return rows
+
+
+def read_upload(f):
+    """The bytes of an uploaded file, refusing big ones BEFORE reading them into memory."""
+    if f.size > MAX_BYTES:
+        raise ValueError('File is too large (max 1 MB).')
+    return f.read()
 
 
 def parse_allowed(text):
@@ -129,10 +147,10 @@ def parse_questions(raw, filename=''):
             errors.append(f'Row {n}: an option is longer than 300 characters.')
             continue
         points = get('points') or '1'
-        if not points.isdigit() or int(points) < 1:
-            errors.append(f'Row {n}: points must be a whole number of 1 or more.')
+        if to_int(points, 1000) is None or to_int(points, 1000) < 1:
+            errors.append(f'Row {n}: points must be a whole number from 1 to 1000.')
             continue
-        rows.append((question, options, int(points)))
+        rows.append((question, options, to_int(points)))
     if not rows and not errors:
         errors.append('No questions found in the file.')
     return rows, errors

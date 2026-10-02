@@ -13,9 +13,10 @@
 {% if roster %}
 <ul style="list-style:none;padding:0;">
   {% for name, state in roster %}
-  <li style="padding:2px 8px;{% if state == 'absent' %}color:#888;{% elif state == 'submitted' %}background:#cfe2ff;{% elif state == 'answering' %}background:#fff3cd;{% else %}background:#d4edda;{% endif %}">
+  <li style="padding:2px 8px;{% if state == 'absent' %}color:#888;{% elif state == 'submitted' %}background:#cfe2ff;{% elif state == 'frozen' %}background:#f8d7da;{% elif state == 'answering' %}background:#fff3cd;{% else %}background:#d4edda;{% endif %}">
     {% if state == 'absent' %}&#9675; {{ name }} &mdash; not joined
     {% elif state == 'lobby' %}&#10003; {{ name }} &mdash; in lobby
+    {% elif state == 'frozen' %}&#9888; {{ name }} &mdash; <strong>frozen</strong>
     {% elif state == 'answering' %}&#9998; {{ name }} &mdash; answering
     {% else %}&#10004; {{ name }} &mdash; submitted{% endif %}
   </li>
@@ -24,6 +25,25 @@
 {% if roster|length >= 300 %}<p><small>Showing the first 300.</small></p>{% endif %}
 {% else %}
 <p>Nobody has joined yet.</p>
+{% endif %}
+
+{% if intruders %}
+<h3>Other-device attempts ({{ intruders|length }})</h3>
+<p><small>Another device tried to use these students' accounts while the student's own device was working. It was turned away and the student was not interrupted. You may want to ask them about it after the exam.</small></p>
+<ul>
+  {% for a in intruders %}
+  <li>{{ a.user.username }}: {{ a.intrusions }} attempt{{ a.intrusions|pluralize }}, last from {{ a.last_intruder_label }}{% if a.last_intruder_ip %} ({{ a.last_intruder_ip }}){% endif %} at {{ a.last_intrusion_at|time:"H:i:s" }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if events %}
+<h3>Activity log</h3>
+<ul>
+  {% for e in events %}
+  <li>{{ e.created_at|time:"H:i:s" }} &ndash; {{ e.detail }}{% if e.actor %} <small>(by {{ e.actor.username }})</small>{% endif %}</li>
+  {% endfor %}
+</ul>
 {% endif %}
 
 {% if reconnected %}

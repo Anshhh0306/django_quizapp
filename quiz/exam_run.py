@@ -70,6 +70,8 @@ def is_closed(attempt, now=None):
         return True
     if attempt.exam.status == Exam.ENDED:
         return True
+    if attempt.frozen_at:  # waiting for the teacher: never auto-submit a seat nobody has looked at yet
+        return False
     return bool(attempt.ends_at and now > attempt.ends_at + timedelta(seconds=GRACE_SECONDS))
 
 
@@ -87,6 +89,17 @@ def finalize(attempt, now=None):
         a.submitted_at = min(now, a.ends_at) if a.ends_at else now  # a late auto-submit is stamped at the deadline
         a.save(update_fields=['total_points', 'score', 'submitted_at'])
         return a
+
+
+def scores_visible(exam, now=None):
+    """May students see scores yet? Open exams: always. Scheduled: once the exam is over AND nobody is still
+    working on it (a student with extra time, or a frozen seat, counts as still working)."""
+    if exam.mode == Exam.OPEN or exam.status == Exam.ENDED:
+        return True
+    if exam.phase(now) != Exam.ENDED:
+        return False
+    finalize_expired(exam, now)
+    return not exam.attempts.filter(started_at__isnull=False, submitted_at__isnull=True).exists()
 
 
 def finalize_expired(exam, now=None):
