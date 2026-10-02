@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
@@ -24,19 +25,30 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 't')
+# Debug mode is OFF unless it is asked for, so a server that was set up in a hurry fails closed, not open.
+# It is ON by default only for local commands (python manage.py runserver / test / migrate ...), which is how
+# you work on your own computer. A production server runs through gunicorn, not manage.py, so it gets the safe
+# default and must be configured with the environment variables below. DJANGO_DEBUG=True/False overrides both.
+_debug_setting = os.environ.get('DJANGO_DEBUG')
+if _debug_setting is not None:
+    DEBUG = _debug_setting.strip().lower() in ('true', '1', 't')
+else:
+    DEBUG = os.path.basename(sys.argv[0]) == 'manage.py'
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 if not SECRET_KEY:
     if not DEBUG:
-        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off')
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set (see .env.example) when debug is off')
     SECRET_KEY = 'django-insecure-dev-only-key'
 
-ALLOWED_HOSTS = [
-    h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',') if h.strip()
-] if not DEBUG else ['*']
+# Only these Host names are served. This also stops a forged Host header from poisoning the links in emails.
+_hosts = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
+if _hosts:
+    ALLOWED_HOSTS = _hosts
+elif DEBUG:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
+else:
+    raise ImproperlyConfigured('DJANGO_ALLOWED_HOSTS must be set (for example "quiz.example.edu") when debug is off')
 
 # Security Headers
 SECURE_BROWSER_XSS_FILTER = True

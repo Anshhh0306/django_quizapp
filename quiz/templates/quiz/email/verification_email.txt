@@ -1,14 +1,14 @@
 Hello {{ user.username }},
 
-Welcome to the SRMIST Quiz Platform! Please verify your email address by clicking the link below:
+Welcome to the SRMIST Quiz Platform! Click the link below to confirm your email address and choose your password:
 
 {{ verification_url }}
 
-This link will expire in 24 hours for security reasons.
+This link will expire in 24 hours and can be used once.
 {% if is_staff_account %}
-After you verify, an administrator must approve your staff account before you can create exams.
+After you finish, an administrator must approve your staff account before you can create exams.
 {% endif %}
-If you didn't register for the Quiz Platform, please ignore this email.
+If you didn't ask for this, ignore this email: nothing happens unless the link is opened, and no one can log in as you without it.
 
 Best regards,
 Quiz Platform Team

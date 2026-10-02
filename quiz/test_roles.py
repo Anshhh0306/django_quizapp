@@ -19,8 +19,7 @@ class RegistrationTests(TestCase):
         cache.clear()
 
     def _register(self, email):
-        return self.client.post(reverse('register'), {
-            'email': email, 'password1': PASSWORD, 'password2': PASSWORD})
+        return self.client.post(reverse('register'), {'email': email})
 
     def test_student_email_any_case_is_accepted_and_lowercased(self):
         r = self._register('AD3919@SRMIST.EDU.IN')
@@ -58,15 +57,18 @@ class RegistrationTests(TestCase):
         user = User.objects.get(username='shantini')
         url = reverse('verify_email', args=[
             urlsafe_base64_encode(force_bytes(user.pk)), email_verification_token.make_token(user)])
-        self.assertTrue(self.client.get(url).context['pending_teacher'])
-        self.assertEqual(role_of(User.objects.get(pk=user.pk)), 'pending')
+        self.assertTemplateUsed(self.client.get(url), 'quiz/verification_set_password.html')
+        r = self.client.post(url, {'new_password1': PASSWORD, 'new_password2': PASSWORD})
+        self.assertTrue(r.context['pending_teacher'])
+        self.assertEqual(role_of(User.objects.get(pk=user.pk)), 'pending')  # verified, but still waiting for the admin
 
     def test_student_is_not_marked_pending(self):
         self._register('ad3919@srmist.edu.in')
         user = User.objects.get(username='ad3919')
         url = reverse('verify_email', args=[
             urlsafe_base64_encode(force_bytes(user.pk)), email_verification_token.make_token(user)])
-        self.assertFalse(self.client.get(url).context['pending_teacher'])
+        r = self.client.post(url, {'new_password1': PASSWORD, 'new_password2': PASSWORD})
+        self.assertFalse(r.context['pending_teacher'])
 
 
 class RoleAccessTests(TestCase):

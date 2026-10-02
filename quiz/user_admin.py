@@ -3,12 +3,15 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from .roles import TEACHERS_GROUP, is_student, role_of
-from django.urls import path
+from django.contrib.auth.tokens import default_token_generator
+from django.template.loader import render_to_string
+from django.urls import path, reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+from django.views.decorators.http import require_POST
 from django.http import HttpResponseRedirect
 from django.core.mail import send_mail
 from django.conf import settings
-import secrets
-import string
 
 User = get_user_model()
 
@@ -36,59 +39,59 @@ class CustomUserAdmin(UserAdmin):
         self.message_user(request, f'{approved} user(s) approved as teachers.')
 
     def get_urls(self):
-        urls = super().get_urls()
+        # These change data, so they are POST-only (a plain link click cannot trigger them) and go through the
+        # admin's own permission check.
+        wrap = lambda view: self.admin_site.admin_view(require_POST(view))
         custom_urls = [
-            path('<id>/deactivate/', self.deactivate_user, name='deactivate_user'),
-            path('<id>/activate/', self.activate_user, name='activate_user'),
-            path('<id>/reset-password/', self.reset_user_password, name='reset_user_password'),
+            path('<id>/deactivate/', wrap(self.deactivate_user), name='deactivate_user'),
+            path('<id>/activate/', wrap(self.activate_user), name='activate_user'),
+            path('<id>/reset-password/', wrap(self.reset_user_password), name='reset_user_password'),
         ]
-        return custom_urls + urls
+        return custom_urls + super().get_urls()
 
-    def deactivate_user(self, request, id):
+    def _target(self, request, id):
         user = self.get_object(request, id)
         if not user:
             self.message_user(request, 'User not found.', level=messages.ERROR)
-            return HttpResponseRedirect("../")
-        user.is_active = False
-        user.save()
-        self.message_user(request, f'User {user.username} has been deactivated.')
+        return user
+
+    def deactivate_user(self, request, id):
+        user = self._target(request, id)
+        if user and user == request.user:
+            self.message_user(request, 'You cannot deactivate your own account.', level=messages.ERROR)
+        elif user:
+            user.is_active = False
+            user.save(update_fields=['is_active'])
+            self.message_user(request, f'User {user.username} has been deactivated.')
         return HttpResponseRedirect("../")
 
     def activate_user(self, request, id):
-        user = self.get_object(request, id)
-        if not user:
-            self.message_user(request, 'User not found.', level=messages.ERROR)
-            return HttpResponseRedirect("../")
-        user.is_active = True
-        user.save()
-        self.message_user(request, f'User {user.username} has been activated.')
+        user = self._target(request, id)
+        if user:
+            user.is_active = True
+            user.save(update_fields=['is_active'])
+            self.message_user(request, f'User {user.username} has been activated.')
         return HttpResponseRedirect("../")
 
     def reset_user_password(self, request, id):
-        user = self.get_object(request, id)
+        """Emails the user a one-time link to choose a new password. No password is ever generated or emailed."""
+        user = self._target(request, id)
         if not user:
-            self.message_user(request, 'User not found.', level=messages.ERROR)
             return HttpResponseRedirect("../")
-        # Generate a secure random password
-        alphabet = string.ascii_letters + string.digits
-        password = ''.join(secrets.choice(alphabet) for i in range(12))
-        user.set_password(password)
-        user.save()
-
-        # Send password reset email
-        if user.email:
-            send_mail(
-                'Password Reset',
-                f'Your password has been reset by an administrator. Your new password is: {password}',
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                fail_silently=False,
-            )
-            msg = f'Password reset for {user.username}. New password has been sent to their email.'
+        if not user.email:
+            self.message_user(request, f'{user.username} has no email address, so no link can be sent.', level=messages.ERROR)
+            return HttpResponseRedirect("../")
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        link = request.build_absolute_uri(reverse('password_reset_confirm', args=[uid, default_token_generator.make_token(user)]))
+        message = render_to_string('quiz/email/password_reset_email.txt', {
+            'user': user, 'reset_url': link, 'site_name': 'SRMIST Quiz Platform'})
+        try:
+            send_mail('Password Reset - SRMIST Quiz Platform', message, settings.DEFAULT_FROM_EMAIL,
+                      [user.email], fail_silently=False)
+        except OSError:
+            self.message_user(request, 'The email could not be sent. Check the email settings.', level=messages.ERROR)
         else:
-            msg = f'Password reset for {user.username}. New password: {password}'
-        
-        self.message_user(request, msg, level=messages.SUCCESS)
+            self.message_user(request, f'A password reset link was emailed to {user.username}.', level=messages.SUCCESS)
         return HttpResponseRedirect("../")
 
     change_form_template = 'admin/custom_change_form.html'

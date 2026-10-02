@@ -3,6 +3,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from .models import Question, Choice, UserQuiz, Category, UserStatistics
 from . import user_admin
+from .forms import AdminLoginForm
 
 class ChoiceInline(admin.TabularInline):
     model = Choice
@@ -63,3 +64,5 @@ class UserStatisticsAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # Statistics are created automatically
+
+admin.site.login_form = AdminLoginForm  # failed admin logins are counted and locked like the normal login

@@ -335,7 +335,9 @@ class QuizFlowTests(TestCase):
 
     def test_resend_verification_is_rate_limited_per_email(self):
         self.client.logout()
-        User.objects.create_user('u2', 'u2@srmist.edu.in', 'TestPassword123!', is_active=False)
+        pending = User.objects.create_user('u2', 'u2@srmist.edu.in', is_active=False)
+        pending.set_unusable_password()  # a registration that has not chosen its password yet
+        pending.save()
         codes = [self.client.post(reverse('resend_verification'), {'email': 'u2@srmist.edu.in'},
                                   REMOTE_ADDR=f'10.0.0.{i}').status_code for i in range(7)]
         self.assertEqual(codes, [200] * 5 + [429] * 2)  # different IPs, same target address
@@ -344,13 +346,13 @@ class QuizFlowTests(TestCase):
     def test_password_reset_is_rate_limited_per_ip(self):
         self.client.logout()
         codes = [self.client.post(reverse('password_reset'), {'email': f'x{i}@srmist.edu.in'}).status_code
-                 for i in range(6)]
-        self.assertEqual(codes[-1], 429)
+                 for i in range(201)]
+        self.assertEqual((codes[199], codes[200]), (200, 429))  # 200 an hour per address: a whole class behind one IP is fine
 
     def test_register_is_rate_limited_per_ip(self):
         self.client.logout()
-        codes = [self.client.post(reverse('register'), {}).status_code for _ in range(11)]
-        self.assertEqual((codes[9], codes[10]), (200, 429))
+        codes = [self.client.post(reverse('register'), {}).status_code for _ in range(201)]
+        self.assertEqual((codes[199], codes[200]), (200, 429))
 
     def test_get_requests_are_not_counted(self):
         self.client.logout()
