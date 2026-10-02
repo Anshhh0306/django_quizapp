@@ -1,13 +1,14 @@
 """Results for the teacher: per-student rows, class summary, and the table used for CSV / Excel download."""
 from django.db.models import Count, Q
 
-from .exam_run import finalize, finalize_expired, is_closed
+from .exam_run import finalize, finalize_expired, is_closed, scores_visible
 
 HEADER = ['Student', 'Email', 'Status', 'Questions', 'Answered', 'Correct', 'Wrong', 'Unanswered',
           'Score', 'Out of', 'Percent', 'Time taken (m:ss)', 'Reconnects']
 KEYS = ('name', 'email', 'status', 'questions', 'answered', 'right', 'wrong', 'unanswered',
         'score', 'total', 'percent', 'minutes', 'rejoins')
-STATUS_ORDER = {'Submitted': 0, 'In progress': 1, 'Joined, did not start': 2, 'Did not join': 3}
+FROZEN = 'Frozen: needs teacher'
+STATUS_ORDER = {'Submitted': 0, FROZEN: 1, 'In progress': 2, 'Joined, did not start': 3, 'Did not join': 4}
 
 
 def result_rows(exam, now=None):
@@ -20,7 +21,8 @@ def result_rows(exam, now=None):
     rows = []
     for a in attempts:
         total_q = len(a.question_ids)
-        status = 'Submitted' if a.submitted_at else 'In progress' if a.started_at else 'Joined, did not start'
+        status = ('Submitted' if a.submitted_at else FROZEN if a.frozen_at else 'In progress' if a.started_at
+                  else 'Joined, did not start')
         seconds = int((a.submitted_at - a.started_at).total_seconds()) if a.submitted_at and a.started_at else None
         rows.append({
             'attempt': a, 'name': a.user.username, 'email': a.user.email.lower(), 'status': status,
@@ -53,6 +55,7 @@ def result_summary(rows):
         'class_size': len(rows),
         'submitted': len(done),
         'in_progress': count('In progress'),
+        'frozen': count(FROZEN),
         'not_started': count('Joined, did not start'),
         'absent': count('Did not join'),
         'average': round(sum(percents) / len(percents)) if percents else None,
@@ -61,9 +64,16 @@ def result_summary(rows):
     }
 
 
+def _safe(value):
+    """Text that starts with = + - @ is run as a formula by Excel: make it plain text."""
+    if isinstance(value, str) and value[:1] in ('=', '+', '-', '@'):
+        return "'" + value
+    return value
+
+
 def result_table(rows):
     """Header + rows as plain lists, for the CSV / Excel download."""
-    return [HEADER] + [['' if r[k] is None else r[k] for k in KEYS] for r in rows]
+    return [HEADER] + [['' if r[k] is None else _safe(r[k]) for k in KEYS] for r in rows]
 
 
 def my_exam_cards(user):
@@ -76,7 +86,7 @@ def my_exam_cards(user):
             a = finalize(a)
             a.exam = e
         phase = e.phase()
-        score_visible = bool(a.submitted_at) and (e.mode == 'open' or phase == 'ended')
+        score_visible = bool(a.submitted_at) and scores_visible(e)
         if a.submitted_at:
             state, page = 'Submitted', 'exam_done'
         elif phase == 'ended':

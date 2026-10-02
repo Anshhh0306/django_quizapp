@@ -35,7 +35,10 @@ class TakeBase(TestCase):
 
     # ---- helpers ----
     def login(self, user):
+        device = self.client.cookies.get('exam_device')  # a real browser keeps its device marker when you log out
         self.client.logout()
+        if device:
+            self.client.cookies['exam_device'] = device.value
         self.client.login(username=user.username, password=PASSWORD)
 
     def url(self, name):

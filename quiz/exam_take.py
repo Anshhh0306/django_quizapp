@@ -1,12 +1,16 @@
 """The student side of an exam in progress: the question page, autosave, submit, and the finished page."""
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.cache import never_cache
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .exam_run import begin_attempt, finalize, is_closed, shuffled_choices
+from .exam_device import bind_device, check_device
+from .exam_run import begin_attempt, finalize, is_closed, scores_visible, shuffled_choices
+from .util import to_int
 from .exam_views import _attempt, _ms, _notice, mobile_blocked
 from .models import Choice, Exam, ExamAnswer, ExamAttempt, Question
 from .roles import is_student
@@ -23,6 +27,7 @@ def _guard(request, token):
     return exam, attempt, None
 
 
+@never_cache
 @login_required
 def exam_take(request, token):
     exam, attempt, early = _guard(request, token)
@@ -35,15 +40,23 @@ def exam_take(request, token):
         return redirect('exam_lobby', token=token)  # no peeking before the start
     if mobile_blocked(request, exam):
         return _notice(request, 'mobile')
-    if phase == Exam.ENDED:
+    # The exam may be over for everyone else while this student still has extra time (or a frozen seat to resolve).
+    if phase == Exam.ENDED and not (attempt.started_at and not is_closed(attempt)):
         if attempt.started_at:
             finalize(attempt)
         return redirect('exam_done', token=token)
 
+    if not attempt.started_at:
+        bind_device(request, attempt)  # before the clock starts, the newest browser wins
     attempt = begin_attempt(attempt)
     if is_closed(attempt):
         finalize(attempt)
         return redirect('exam_done', token=token)
+    state = check_device(request, attempt)
+    if state != 'ok':  # a second browser: nothing is shown, not even the questions
+        return render(request, 'quiz/exam/frozen.html', {
+            'exam': exam, 'blocked': state == 'blocked',
+            'ping_url': reverse('exam_ping', args=[token]), 'done_url': reverse('exam_done', args=[token])})
 
     questions = Question.objects.filter(pk__in=attempt.question_ids).prefetch_related('choices')
     by_id = {q.pk: q for q in questions}
@@ -61,6 +74,7 @@ def exam_take(request, token):
             'answers': {str(a.question_id): a.choice_id for a in attempt.answers.all()},
             'deadline_ms': _ms(attempt.ends_at) if attempt.ends_at else None,
             'now_ms': _ms(timezone.now()),
+            'ping_url': reverse('exam_ping', args=[token]),
             'answer_url': reverse('exam_answer', args=[token]),
             'submit_url': reverse('exam_submit', args=[token]),
             'done_url': reverse('exam_done', args=[token]),
@@ -68,6 +82,7 @@ def exam_take(request, token):
     })
 
 
+@never_cache
 @login_required
 @require_POST
 def exam_answer(request, token):
@@ -79,30 +94,64 @@ def exam_answer(request, token):
     if is_closed(attempt):
         finalize(attempt)
         return JsonResponse({'ok': False, 'reason': 'closed'}, status=409)
+    state = check_device(request, attempt)
+    if state != 'ok':  # frozen (423) or turned away (403): nothing is saved from this browser
+        return JsonResponse({'ok': False, 'reason': state}, status=423 if state == 'frozen' else 403)
 
-    qid, cid = request.POST.get('question', ''), request.POST.get('choice', '')
-    if not qid.isdigit() or int(qid) not in attempt.question_ids:
+    qid, raw_choice = to_int(request.POST.get('question', '')), request.POST.get('choice', '')
+    if qid is None or qid not in attempt.question_ids:
         return JsonResponse({'ok': False, 'reason': 'bad_question'}, status=400)
-    if cid == '':  # student cleared their answer
-        ExamAnswer.objects.filter(attempt=attempt, question_id=qid).delete()
-        return JsonResponse({'ok': True})
-    if not cid.isdigit() or not Choice.objects.filter(pk=cid, question_id=qid).exists():
-        return JsonResponse({'ok': False, 'reason': 'bad_choice'}, status=400)
-    ExamAnswer.objects.update_or_create(attempt=attempt, question_id=qid, defaults={'choice_id': cid})
+    cid = None
+    if raw_choice != '':  # an empty choice means the student cleared their answer
+        cid = to_int(raw_choice)
+        if cid is None or not Choice.objects.filter(pk=cid, question_id=qid).exists():
+            return JsonResponse({'ok': False, 'reason': 'bad_choice'}, status=400)
+
+    # Lock the attempt while writing so a Submit arriving at the same moment cannot score the exam first
+    # and leave this answer behind as one the score does not count.
+    with transaction.atomic():
+        locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+        if locked.submitted_at:
+            return JsonResponse({'ok': False, 'reason': 'closed'}, status=409)
+        if cid is None:
+            ExamAnswer.objects.filter(attempt=locked, question_id=qid).delete()
+        else:
+            ExamAnswer.objects.update_or_create(attempt=locked, question_id=qid, defaults={'choice_id': cid})
     return JsonResponse({'ok': True})
 
 
+@never_cache
 @login_required
 @require_POST
 def exam_submit(request, token):
     exam, attempt, early = _guard(request, token)
     if early:
         return early
-    if attempt.started_at:
-        finalize(attempt)
+    if attempt.submitted_at or not attempt.started_at:
+        return redirect('exam_done', token=token)  # nothing to submit (and no device alarm for a finished exam)
+    if check_device(request, attempt) != 'ok':  # a frozen or turned-away browser cannot submit
+        return redirect('exam_take', token=token)
+    finalize(attempt)
     return redirect('exam_done', token=token)
 
 
+@never_cache
+@login_required
+def exam_ping(request, token):
+    """The exam page asks every few seconds: still ok? frozen? new deadline? Also how a frozen page learns it was released."""
+    exam = get_object_or_404(Exam, token=token)
+    attempt = ExamAttempt.objects.filter(exam=exam, user=request.user).select_related('exam').first()
+    if not attempt or not attempt.started_at:
+        return JsonResponse({'state': 'closed'}, status=404)
+    now = timezone.now()
+    if is_closed(attempt, now):
+        finalize(attempt, now)
+        return JsonResponse({'state': 'closed'})
+    return JsonResponse({'state': check_device(request, attempt, now), 'now_ms': _ms(now),
+                         'deadline_ms': _ms(attempt.ends_at) if attempt.ends_at else None})
+
+
+@never_cache
 @login_required
 def exam_done(request, token):
     exam, attempt, early = _guard(request, token)
@@ -114,8 +163,9 @@ def exam_done(request, token):
         attempt = finalize(attempt)
 
     context = {'exam': exam, 'attempt': attempt, 'started': bool(attempt.started_at)}
-    # Scheduled exams reveal the score only after everyone is done, so early finishers can't pass anything on.
-    if attempt.submitted_at and (exam.mode == Exam.OPEN or exam.phase() == Exam.ENDED):
+    # Scheduled exams reveal the score only once nobody is still working (extra time included),
+    # so early finishers can't pass anything on.
+    if attempt.submitted_at and scores_visible(exam):
         order = {qid: i for i, qid in enumerate(attempt.question_ids)}
         answers = sorted(attempt.answers.select_related('question', 'choice'), key=lambda a: order.get(a.question_id, 0))
         context.update(show_score=True, selections=[(a.question.text, a.choice.text) for a in answers])

@@ -45,6 +45,13 @@
   </div>
 </div>
 
+<div id="freeze" style="display:none;position:fixed;inset:0;z-index:50;align-items:center;justify-content:center;text-align:center;padding:24px;background:rgba(255,255,255,.55);backdrop-filter:blur(8px);">
+  <div style="max-width:460px;background:#fff;padding:28px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.2);">
+    <h2 id="freeze-title">Your exam is paused</h2>
+    <p id="freeze-text">Waiting for your teacher to verify. Please keep this page open and stay in this window.</p>
+  </div>
+</div>
+
 <form>{% csrf_token %}</form>
 {{ payload|json_script:"exam-data" }}
 
@@ -101,6 +108,7 @@
   }
 
   // ---- autosave: every click is sent now, and retried every 3 seconds if the connection drops ----
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   function setState(text, bad) { const s = $('save-state'); s.textContent = text; s.className = bad ? 'bad' : ''; }
   function choose(qid, cid) {
     if (finished) return;
@@ -109,6 +117,7 @@
     render();
     flush();
   }
+  const unsaved = () => Object.keys(pending).length;
   let flushing = false;
   async function flush() {
     if (flushing || finished) return;
@@ -120,19 +129,60 @@
         const body = new URLSearchParams({question: qid, choice: cid});
         const r = await fetch(data.answer_url, {method: 'POST', body, credentials: 'same-origin',
                                                 headers: {'X-CSRFToken': csrf}});
-        if (r.status === 409) { finish(); return; }          // exam closed on the server
-        if (r.ok) { if (pending[qid] === cid) delete pending[qid]; setState('Saved ✓'); }
+        let j = null;
+        try { j = await r.json(); } catch (e) {}
+        if (j === null || r.redirected) {  // not our JSON: the login expired, or a security check failed
+          setState('Could not save. Please reload this page (you may need to log in again). Your answers so far are safe.', true);
+          break;
+        }
+        if (r.status === 409) { finish(); return; }          // the exam is closed on the server
+        if (r.status === 423) { setFrozen(true); break; }    // the teacher has paused this seat
+        if (r.status === 403) {
+          if (j.reason === 'blocked') { setBlocked(); return; }  // this browser was turned away
+          setState('Could not save. Please reload this page.', true);
+          break;
+        }
+        if (r.ok && j.ok) { if (pending[qid] === cid) delete pending[qid]; setState('Saved ✓'); }
         else { setState('Could not save. Retrying…', true); break; }
       }
     } catch (e) {
       setState('Offline. Your answers are kept here and will save when the connection returns.', true);
+    } finally {
+      flushing = false;
     }
-    flushing = false;
   }
-  setInterval(() => { if (Object.keys(pending).length) flush(); }, 3000);
+  setInterval(() => { if (unsaved()) flush(); }, 3000);
+
+  // ---- freeze: a blurred, locked screen until the teacher releases this seat ----
+  function setFrozen(on) {
+    $('freeze').style.display = on ? 'flex' : 'none';
+    document.querySelector('.exam-wrap').inert = on;  // nothing underneath can be clicked or focused
+  }
+  function setBlocked() {
+    finished = true;
+    $('freeze-title').textContent = 'Open on another device';
+    $('freeze-text').textContent = 'This exam is now open on a different device. Please talk to your teacher.';
+    setFrozen(true);
+  }
+
+  // ---- what the server says: still ok? frozen? a new deadline (extra time)? ----
+  function applyPing(d) {
+    if (d.state === 'closed') { finish(); return; }
+    if (d.state === 'blocked') { setBlocked(); return; }
+    setFrozen(d.state === 'frozen');
+    if (d.deadline_ms !== undefined) { data.deadline_ms = d.deadline_ms; data.now_ms = d.now_ms; t0 = performance.now(); }
+    if (d.state === 'ok' && unsaved()) flush();
+  }
+  setInterval(() => {
+    if (finished) return;
+    fetch(data.ping_url, {credentials: 'same-origin'})
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) applyPing(d); })
+      .catch(() => {});
+  }, 8000);
 
   // ---- timer: counts down to the SERVER's deadline, not this computer's clock ----
-  const t0 = performance.now();
+  let t0 = performance.now();
   function remainingMs() { return data.deadline_ms === null ? null : data.deadline_ms - (data.now_ms + (performance.now() - t0)); }
   function drawTimer() {
     const r = remainingMs();
@@ -141,15 +191,40 @@
     const s = Math.max(0, Math.ceil(r / 1000));
     t.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
     t.className = s <= 300 ? 'low' : '';
-    if (r <= 0) submit(true);
+    if (r <= 0) timeUp();
   }
   setInterval(drawTimer, 500);
 
-  // ---- submit ----
-  async function submit(auto) {
-    if (finished) return;
+  // Time reached zero on this screen. The SERVER decides whether the exam is really over: the teacher may have
+  // just added time that has not reached this page yet. So: save what is pending, then ask. The server closes
+  // the exam by itself once the deadline (plus a few seconds of grace) has passed.
+  let timeUpBusy = false;
+  async function timeUp() {
+    if (timeUpBusy || finished) return;
+    timeUpBusy = true;
+    try {
+      await flush();
+      const r = await fetch(data.ping_url, {credentials: 'same-origin'});
+      if (r.ok) applyPing(await r.json());
+    } catch (e) {}
+    if (!finished) setTimeout(() => { timeUpBusy = false; }, 3000);  // not closed yet (grace window or offline): ask again shortly
+  }
+
+  // ---- submit: first make sure every answer has reached the server ----
+  let submitting = false;
+  async function submit() {
+    if (finished || submitting) return;
     const unanswered = Q.filter((q) => !answers[q.id]).length;
-    if (!auto && !confirm(unanswered ? unanswered + ' question(s) are unanswered. Submit anyway?' : 'Submit your exam now?')) return;
+    if (!confirm(unanswered ? unanswered + ' question(s) are unanswered. Submit anyway?' : 'Submit your exam now?')) return;
+    submitting = true;
+    $('submit').disabled = true;
+    setState('Saving your answers…');
+    const giveUp = Date.now() + 8000;
+    while (unsaved() && Date.now() < giveUp && !finished) { await flush(); if (unsaved()) await sleep(700); }
+    if (finished) return;  // the server closed the exam meanwhile
+    if (unsaved() && !confirm('Some answers could not be saved (connection problem). Submit anyway? Those answers will be lost.')) {
+      submitting = false; $('submit').disabled = false; return;
+    }
     finished = true;
     try { await fetch(data.submit_url, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf}}); } catch (e) {}
     window.location = data.done_url;  // the server finalises on this page too, so a failed request is safe
@@ -159,7 +234,7 @@
   $('prev').onclick = () => { if (current > 0) { current--; render(); } };
   $('next').onclick = () => { if (current < Q.length - 1) { current++; render(); } };
   $('clear').onclick = () => choose(Q[current].id, '');
-  $('submit').onclick = () => submit(false);
+  $('submit').onclick = () => submit();
   render();
   drawTimer();
 })();

@@ -76,6 +76,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'quiz.middleware.AdminAccessMiddleware',  # Custom middleware to protect admin interface
+    'quiz.middleware.DeviceCookieMiddleware',  # marks each browser on exam pages (device lock)
 ]
 
 ROOT_URLCONF = 'quiz_project.urls'
@@ -106,6 +107,12 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        'OPTIONS': {
+            # Many students writing at once (seat claims, autosaves): make writers wait their turn instead of
+            # failing with "database is locked". PostgreSQL is still the right database for real exams.
+            'transaction_mode': 'IMMEDIATE',
+            'timeout': 20,
+        },
     }
 }
 

@@ -178,9 +178,40 @@ class ExamAttempt(models.Model):
     submitted_at = models.DateTimeField(null=True, blank=True)
     score = models.PositiveIntegerField(null=True, blank=True)
     total_points = models.PositiveIntegerField(default=0)
+    # --- device lock and freeze (step 3) ---
+    device_id = models.CharField(max_length=64, blank=True)       # browser the exam is locked to
+    device_label = models.CharField(max_length=100, blank=True)   # e.g. "Chrome on Windows"
+    device_ip = models.GenericIPAddressField(null=True, blank=True)
+    frozen_at = models.DateTimeField(null=True, blank=True)       # set while the teacher has to look at it
+    freezes = models.PositiveIntegerField(default=0)
+    challenger_id = models.CharField(max_length=64, blank=True)   # the other browser that tried to get in
+    challenger_label = models.CharField(max_length=100, blank=True)
+    challenger_ip = models.GenericIPAddressField(null=True, blank=True)
+    blocked_devices = models.JSONField(default=list, blank=True)  # browsers the teacher turned away
+    device_seen_at = models.DateTimeField(null=True, blank=True)  # last time the locked browser checked in
+    # other browsers turned away while the student's own browser was active (the student is never interrupted)
+    intrusions = models.PositiveIntegerField(default=0)
+    last_intruder_id = models.CharField(max_length=64, blank=True)
+    last_intruder_label = models.CharField(max_length=100, blank=True)
+    last_intruder_ip = models.GenericIPAddressField(null=True, blank=True)
+    last_intrusion_at = models.DateTimeField(null=True, blank=True)
+    extra_seconds = models.PositiveIntegerField(default=0)        # extra time the teacher granted
 
     class Meta:
         unique_together = ['exam', 'user']
+
+
+class ExamEvent(models.Model):
+    """Audit log: who froze, unfroze or gave extra time, and when. Only the teacher ever sees this."""
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='events')
+    attempt = models.ForeignKey(ExamAttempt, on_delete=models.CASCADE, null=True, blank=True, related_name='events')
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)  # the teacher; empty = the system
+    kind = models.CharField(max_length=20)
+    detail = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
 
 
 class ExamAnswer(models.Model):

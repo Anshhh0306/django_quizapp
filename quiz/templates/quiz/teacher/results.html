@@ -8,6 +8,7 @@
 
   <ul>
     <li>Submitted: <strong>{{ summary.submitted }}</strong> of {{ summary.class_size }} {% if exam.allowed.exists %}on the class list{% else %}who joined{% endif %}</li>
+    {% if summary.frozen %}<li><strong>Frozen, waiting for you: {{ summary.frozen }}</strong></li>{% endif %}
     {% if summary.in_progress %}<li>Still answering: {{ summary.in_progress }}</li>{% endif %}
     {% if summary.not_started %}<li>Joined but never started: {{ summary.not_started }}</li>{% endif %}
     {% if summary.absent %}<li>Did not join: {{ summary.absent }}</li>{% endif %}
