@@ -178,6 +178,9 @@ class ExamAllowed(models.Model):
         unique_together = ['exam', 'email']
 
 
+DEVICE_TAG = 4  # characters of a device id that make up its short code
+
+
 class ExamAttempt(models.Model):
     """One row per student who took a seat (after consent). Grows in step 2c with timing and score."""
     exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='attempts')
@@ -214,6 +217,16 @@ class ExamAttempt(models.Model):
 
     class Meta:
         unique_together = ['exam', 'user']
+
+    # A short code for a browser, shown on that browser's screen and in the teacher's unfreeze list, so in a lab
+    # full of identical "Chrome on Windows" machines the teacher can tell which device is which.
+    @property
+    def device_tag(self):
+        return self.device_id[:DEVICE_TAG]
+
+    @property
+    def challenger_tag(self):
+        return self.challenger_id[:DEVICE_TAG]
 
 
 class ExamEvent(models.Model):

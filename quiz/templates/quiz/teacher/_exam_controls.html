@@ -2,7 +2,7 @@
 {% if frozen %}
 <div style="border:2px solid #c0392b;padding:10px;margin:12px 0;background:#fdecea;">
   <h3 style="margin-top:0;">Frozen: needs you ({{ frozen|length }})</h3>
-  <p><small>Their clock keeps running. Look at the two devices, choose which one may continue, and add extra time if it was not their fault.</small></p>
+  <p><small>Their clock keeps running. Ask the student to read the <strong>device code</strong> on their screen and match it to the code in [brackets] below, choose which device may continue, and add extra time if it was not their fault.</small></p>
   {% for a in frozen %}
   <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="unfreeze-{{ a.pk }}" style="border-top:1px solid #e0b4af;padding:8px 0;"
         onsubmit="return confirm('Unfreeze {{ a.user.username }}? The device you did NOT choose will be turned away.');">
@@ -12,8 +12,8 @@
     <strong>{{ a.user.username }}</strong> (frozen at {{ a.frozen_at|time:"H:i:s" }}{% if a.freezes > 1 %}, {{ a.freezes }} times{% endif %})<br>
     <label>Allow:
       <select name="device">
-        <option value="original">Original: {{ a.device_label }}{% if a.device_ip %} ({{ a.device_ip }}){% endif %}</option>
-        <option value="new">New: {{ a.challenger_label }}{% if a.challenger_ip %} ({{ a.challenger_ip }}){% endif %}</option>
+        <option value="original">Original [{{ a.device_tag }}]: {{ a.device_label }}{% if a.device_ip %} ({{ a.device_ip }}){% endif %}{% if a.device_seen_at %}, last active {{ a.device_seen_at|time:"H:i:s" }}{% endif %}</option>
+        <option value="new">New [{{ a.challenger_tag }}]: {{ a.challenger_label }}{% if a.challenger_ip %} ({{ a.challenger_ip }}){% endif %}</option>
       </select>
     </label>
     <label>Extra time:

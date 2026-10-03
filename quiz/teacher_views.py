@@ -191,7 +191,10 @@ def exam_detail(request, pk):
                     text += '\n' + read_student_list(read_upload(request.FILES['students_file']), request.FILES['students_file'].name)
                 except ValueError as e:
                     error = str(e)
-            emails, bad = parse_allowed(text)
+            try:
+                emails, bad = parse_allowed(text)
+            except ValueError as e:  # more students than one class list may hold
+                error, emails, bad = str(e), [], []
             if error:
                 messages.error(request, error)
             elif bad:

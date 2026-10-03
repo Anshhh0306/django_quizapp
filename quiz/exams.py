@@ -1,5 +1,6 @@
 import csv
 import io
+import random
 import re
 import zipfile
 
@@ -10,7 +11,8 @@ from .roles import STUDENT_RE
 from .util import to_int
 
 MAX_ROWS = 500          # questions per upload
-MAX_STUDENTS = 20000    # class list rows per upload
+MAX_STUDENTS = 20000    # students in one class list (typed, uploaded, or added later in one go)
+TOO_MANY_STUDENTS = 'Too many students: a class list can have at most {:,}.'
 MAX_BYTES = 1_000_000
 MAX_UNPACKED_BYTES = 20_000_000  # an .xlsx is a zip: a tiny file can unpack into gigabytes
 MAX_COLUMNS = 30
@@ -91,14 +93,19 @@ def parse_allowed(text):
             emails.append(email)
         else:
             bad.append(token)
-    return list(dict.fromkeys(emails)), bad
+    emails = list(dict.fromkeys(emails))
+    if len(emails) > MAX_STUDENTS:
+        raise ValueError(TOO_MANY_STUDENTS.format(MAX_STUDENTS))
+    return emails, bad
 
 
 def read_student_list(raw, filename=''):
     """Student-list file -> text for parse_allowed. Uses the first column; skips a header row."""
-    cells = [row[0] for row in read_table(raw, filename, MAX_STUDENTS) if row and row[0]]
+    cells = [row[0] for row in read_table(raw, filename, MAX_STUDENTS + 2) if row and row[0]]  # +2: header, one spare
     if cells and cells[0].lower() in _HEADER_CELLS:
         cells = cells[1:]
+    if len(cells) > MAX_STUDENTS:  # say so, rather than silently dropping the rest and turning those students away
+        raise ValueError(TOO_MANY_STUDENTS.format(MAX_STUDENTS))
     return '\n'.join(cells)
 
 
@@ -159,7 +166,8 @@ def parse_questions(raw, filename=''):
 def create_questions(owner, rows, question_set=None):
     for text, options, points in rows:
         q = Question.objects.create(text=text, owner=owner, points=points, question_set=question_set)
-        Choice.objects.bulk_create(Choice(question=q, text=t, is_correct=ok) for t, ok in options)
+        # students see the option ids, so they must not follow the file's A-D order (a skewed key would leak)
+        Choice.objects.bulk_create(Choice(question=q, text=t, is_correct=ok) for t, ok in random.sample(options, len(options)))
     return len(rows)
 
 

@@ -60,7 +60,7 @@
 <h3>Turned away ({{ denied|length }})</h3>
 <ul>
   {% for d in denied %}
-  <li>{{ d.user.username }}: {{ d.reason }} ({{ d.tries }} tr{{ d.tries|pluralize:"y,ies" }}, last at {{ d.last_at|time:"H:i:s" }})</li>
+  <li>{{ d.user.username }}: {% if d.reason == 'not_listed' %}not on the class list{% elif d.reason == 'full' %}no seats left{% else %}{{ d.reason }}{% endif %} ({{ d.tries }} tr{{ d.tries|pluralize:"y,ies" }}, last at {{ d.last_at|time:"H:i:s" }})</li>
   {% endfor %}
 </ul>
 {% endif %}

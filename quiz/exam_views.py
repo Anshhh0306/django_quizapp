@@ -90,7 +90,8 @@ def exam_entry(request, token):
         return _notice(request, 'mobile')
     attempt = _attempt(exam, request.user)
     if attempt:  # already has a seat: let them straight back in and flag it for the teacher
-        ExamAttempt.objects.filter(pk=attempt.pk).update(rejoins=F('rejoins') + 1, last_rejoin_at=timezone.now())
+        if attempt.device_id in ('', request.device_id):  # another browser is no reconnect: the device lock deals with it
+            ExamAttempt.objects.filter(pk=attempt.pk).update(rejoins=F('rejoins') + 1, last_rejoin_at=timezone.now())
         return redirect('exam_lobby', token=token)
     problem = admission_problem(exam, request.user)
     if problem:
