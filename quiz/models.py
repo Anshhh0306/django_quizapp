@@ -11,10 +11,25 @@ class Category(models.Model):
     class Meta:
         verbose_name_plural = "Categories"
 
+class QuestionSet(models.Model):
+    """One teacher upload: a named group of questions the teacher can open, hide or delete as a whole."""
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='question_sets')
+    name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    hidden = models.BooleanField(default=False)  # still works for exams that use it, but is not offered for new ones
+
+    class Meta:
+        unique_together = ['owner', 'name']
+
+    def __str__(self):
+        return self.name
+
+
 class Question(models.Model):
     text = models.CharField(max_length=500)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='questions', null=True)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='question_bank')  # teacher who uploaded it
+    question_set = models.ForeignKey(QuestionSet, on_delete=models.CASCADE, null=True, blank=True, related_name='questions')  # the upload it came from
     time_limit = models.IntegerField(default=30)  # Time limit in seconds
     points = models.IntegerField(default=1)  # Points awarded for correct answer
     

@@ -31,6 +31,7 @@ urlpatterns = [
     # Teacher tools and exam links
     path('teach/', teacher_views.teach_home, name='teach_home'),
     path('teach/questions/', teacher_views.question_bank, name='question_bank'),
+    path('teach/questions/<int:pk>/', teacher_views.question_set_action, name='question_set_action'),
     path('teach/templates/questions.csv', teacher_views.question_template, name='question_template'),
     path('teach/templates/students.csv', teacher_views.student_template, name='student_template'),
     path('teach/exams/new/', teacher_views.exam_new, name='exam_new'),

@@ -2,8 +2,8 @@
 {% block content %}
 <div class="container">
   <h2>My question bank</h2>
-  <p>{{ count }} question(s) in your bank. <a href="{% url 'teach_home' %}">Back</a></p>
-  {% if messages %}{% for m in messages %}<div>{{ m }}</div>{% endfor %}{% endif %}
+  <p>{{ count }} question(s) in {{ set_count }} set(s). <a href="{% url 'teach_home' %}">Back</a></p>
+  {% for m in messages %}<div{% if m.tags == 'error' %} class="error"{% endif %}>{{ m }}</div>{% endfor %}
   {% if errors %}
     <div class="error">
       <strong>Nothing was uploaded. Fix these and try again:</strong>
@@ -12,19 +12,92 @@
   {% endif %}
 
   <h3>Upload questions (CSV or Excel)</h3>
+  <p class="help-text">Every upload becomes a <strong>set</strong>: a named group of questions that you can open, hide or delete as a whole.</p>
   <form method="post" enctype="multipart/form-data" class="simple-form">
     {% csrf_token %}
+    <div class="form-field">
+      <label for="set-name">Set name (optional)</label>
+      <input id="set-name" type="text" name="name" maxlength="100" value="{{ typed_name }}" placeholder="Leave empty to use the file name">
+    </div>
     <input type="file" name="file" accept=".csv,.xlsx" required>
     <button type="submit" class="btn btn-create">Upload</button>
   </form>
 
   <p>Download template: <a href="{% url 'question_template' %}" class="btn btn-view">CSV</a> <a href="{% url 'question_template' %}?format=xlsx" class="btn btn-view">Excel</a></p>
 
-  <h4>Format</h4>
-  <p>First row is the header. Columns: <code>question, option_a, option_b, option_c, option_d, correct, points</code>.
-     <code>correct</code> is A, B, C or D. Options C and D and <code>points</code> are optional (points default to 1). Use .xlsx (first sheet) or CSV UTF-8, max 500 rows.</p>
-  <pre>question,option_a,option_b,option_c,option_d,correct,points
+  <details>
+    <summary>File format (click to open)</summary>
+    <p>First row is the header. Columns: <code>question, option_a, option_b, option_c, option_d, correct, points</code>.
+       <code>correct</code> is A, B, C or D. Options C and D and <code>points</code> are optional (points default to 1). Use .xlsx (first sheet) or CSV UTF-8, max 500 rows.</p>
+    <pre>question,option_a,option_b,option_c,option_d,correct,points
 What does len("abc") return?,2,3,4,,B,1
 Which keyword defines a function in Python?,func,def,function,lambda,B,2</pre>
+  </details>
+
+  <h3>My sets</h3>
+  {% for qset in sets %}
+    <details class="bank-set" style="margin:8px 0;border:1px solid #bbb;padding:6px 10px;">
+      <summary><strong>{{ qset.name }}</strong> &mdash; {{ qset.question_list|length }} question(s), {{ qset.mark_total }} marks</summary>
+      {% if qset.used_by %}
+        <p class="help-text">Used by: {{ qset.used_by|join:", " }}. It cannot be deleted while an exam uses it; hide it to get it out of the way.</p>
+      {% endif %}
+      <div style="margin:8px 0;">
+        <form method="post" action="{% url 'question_set_action' qset.pk %}" style="display:inline;">
+          {% csrf_token %}<input type="hidden" name="action" value="hide">
+          <button type="submit" class="btn btn-view">Hide</button>
+        </form>
+        {% if not qset.used_by %}
+        <form method="post" action="{% url 'question_set_action' qset.pk %}" style="display:inline;"
+              data-confirm="Delete “{{ qset.name }}” and its {{ qset.question_list|length }} question(s)? This cannot be undone.">
+          {% csrf_token %}<input type="hidden" name="action" value="delete">
+          <button type="submit" class="btn btn-view">Delete</button>
+        </form>
+        {% endif %}
+      </div>
+      <ol>
+        {% for q in qset.question_list %}
+          <li>{{ q.text }} <small>({{ q.points }} mark{{ q.points|pluralize }})</small>
+            <ul>
+              {% for c in q.choices.all %}
+                <li>{% if c.is_correct %}<strong>&#10003; {{ c.text }}</strong>{% else %}{{ c.text }}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </li>
+        {% endfor %}
+      </ol>
+    </details>
+  {% empty %}
+    <p>No sets yet. Upload a file above to make your first one.</p>
+  {% endfor %}
+
+  {% if hidden_sets %}
+    <h3>Hidden sets ({{ hidden_sets|length }})</h3>
+    <p class="help-text">Hidden sets are not offered when you create exams. Exams that already use them are not affected.</p>
+    <ul>
+      {% for qset in hidden_sets %}
+        <li>{{ qset.name }} &mdash; {{ qset.question_count }} question(s)
+          <form method="post" action="{% url 'question_set_action' qset.pk %}" style="display:inline;">
+            {% csrf_token %}<input type="hidden" name="action" value="unhide">
+            <button type="submit" class="btn btn-view">Bring back</button>
+          </form>
+          {% if qset.used_by %}
+            <small class="help-text">Used by: {{ qset.used_by|join:", " }}</small>
+          {% else %}
+          <form method="post" action="{% url 'question_set_action' qset.pk %}" style="display:inline;"
+                data-confirm="Delete “{{ qset.name }}” and its {{ qset.question_count }} question(s)? This cannot be undone.">
+            {% csrf_token %}<input type="hidden" name="action" value="delete">
+            <button type="submit" class="btn btn-view">Delete</button>
+          </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
 </div>
+<script>
+  // ask before deleting a set (the text comes from the page, so a set name can never run as code)
+  document.querySelectorAll('form[data-confirm]').forEach((form) => {
+    form.addEventListener('submit', (e) => { if (!confirm(form.dataset.confirm)) e.preventDefault(); });
+  });
+</script>
 {% endblock %}

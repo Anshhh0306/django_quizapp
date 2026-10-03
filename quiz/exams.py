@@ -156,9 +156,9 @@ def parse_questions(raw, filename=''):
     return rows, errors
 
 
-def create_questions(owner, rows):
+def create_questions(owner, rows, question_set=None):
     for text, options, points in rows:
-        q = Question.objects.create(text=text, owner=owner, points=points)
+        q = Question.objects.create(text=text, owner=owner, points=points, question_set=question_set)
         Choice.objects.bulk_create(Choice(question=q, text=t, is_correct=ok) for t, ok in options)
     return len(rows)
 

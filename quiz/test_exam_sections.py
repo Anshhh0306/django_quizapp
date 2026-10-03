@@ -54,10 +54,9 @@ class ExamFormSectionTests(TakeBase):
             Question.objects.create(text=f'{marks}-marker', owner=self.teacher, points=marks)
 
     def test_picker_groups_the_teachers_questions_by_marks(self):
-        form = ExamForm(owner=self.teacher)
-        groups = {marks: len(boxes) for marks, boxes in form.question_groups()}
-        self.assertEqual(groups, {1: 9, 2: 1, 3: 2})
-        self.assertEqual([m for m, _ in form.question_groups()], [1, 2, 3])
+        (group,) = ExamForm(owner=self.teacher).question_sets()  # these questions are in no set, so they share one group
+        self.assertEqual({marks: len(items) for marks, items in group['sections']}, {1: 9, 2: 1, 3: 2})
+        self.assertEqual([m for m, _ in group['sections']], [1, 2, 3])
 
     def test_create_exam_page_shows_a_section_per_marks_value(self):
         self.login(self.teacher)
@@ -71,7 +70,8 @@ class ExamFormSectionTests(TakeBase):
         other = User.objects.create_user('meena', 'meena@srmist.edu.in', 'TestPassword123!')
         other.groups.add(Group.objects.get(name='Teachers'))
         Question.objects.create(text='theirs', owner=other, points=5)
-        self.assertNotIn(5, [m for m, _ in ExamForm(owner=self.teacher).question_groups()])
+        marks = [m for group in ExamForm(owner=self.teacher).question_sets() for m, _ in group['sections']]
+        self.assertNotIn(5, marks)
 
     def test_exam_can_still_be_created_from_the_grouped_picker(self):
         self.login(self.teacher)

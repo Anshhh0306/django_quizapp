@@ -92,17 +92,33 @@ class ExamForm(forms.ModelForm):
 
     def __init__(self, *args, owner, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['questions'].queryset = Question.objects.filter(owner=owner).order_by('id')
+        # a hidden set keeps working for the exams that already use it, but cannot be picked for a new one
+        self.fields['questions'].queryset = (Question.objects.filter(owner=owner).exclude(question_set__hidden=True)
+                                             .select_related('question_set').order_by('id'))
         self.fields['seat_limit'].required = False
         self.fields['seat_limit'].help_text = ('Only needed without a class list. '
                                                'With a class list, every listed student automatically has a seat.')
 
-    def question_groups(self):
-        """[(marks, [checkbox, ...])] so the picker shows 1-mark, 2-mark, ... sections instead of one long list."""
-        groups = {}
+    def question_sets(self):
+        """The picker, set by set (newest first): [{'name', 'count', 'marks', 'picked', 'sections'}], where sections is
+        [(marks, [(number, checkbox), ...])]. A number is the question's place in its set, as on the question bank page."""
+        by_set = {}
         for box in self['questions']:
-            groups.setdefault(box.data['value'].instance.points, []).append(box)
-        return sorted(groups.items())
+            question = box.data['value'].instance
+            by_set.setdefault(question.question_set, []).append((question, box))
+        groups = []
+        for qset, items in sorted(by_set.items(), key=lambda pair: (pair[0] is None, -pair[0].pk if pair[0] else 0)):
+            sections = {}
+            for number, (question, box) in enumerate(items, start=1):
+                sections.setdefault(question.points, []).append((number, box))
+            groups.append({
+                'name': qset.name if qset else 'Other questions (not in a set)',
+                'count': len(items),
+                'marks': sum(question.points for question, _ in items),
+                'picked': any(box.data['selected'] for _, box in items),  # keep sets with ticked boxes open
+                'sections': sorted(sections.items()),
+            })
+        return groups
 
     def clean(self):
         data = super().clean()

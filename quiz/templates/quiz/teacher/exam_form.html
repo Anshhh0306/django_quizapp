@@ -3,22 +3,32 @@
 <div class="container">
   <h2>Create exam</h2>
   {% if not has_questions %}
-    <p>You have no questions yet. <a href="{% url 'question_bank' %}">Upload some first.</a></p>
+    <p>You have no questions to pick from yet. <a href="{% url 'question_bank' %}">Upload a set first</a> (or bring back a hidden one).</p>
   {% else %}
-  <form method="post" enctype="multipart/form-data" class="simple-form">
+  <form method="post" enctype="multipart/form-data" class="simple-form" id="exam-form">
     {% csrf_token %}
     {% for field in form %}
       <div class="form-field">
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {% if field.name == 'questions' %}
-          {% for marks, boxes in form.question_groups %}
-          <fieldset style="margin:8px 0;border:1px solid #ccc;padding:8px;">
-            <legend><strong>{{ marks }}-mark questions ({{ boxes|length }})</strong>
-              <a href="#" class="select-all" style="font-size:.85rem;margin-left:8px;">select all / none</a></legend>
-            {% for box in boxes %}
-              <div>{{ box.tag }} <label for="{{ box.id_for_label }}">{{ box.choice_label }}</label></div>
+          <div style="position:sticky;top:0;z-index:1;background:#fff;padding:6px 0;border-bottom:1px solid #ddd;">
+            Selected: <strong id="pick-count">0</strong> question(s), <strong id="pick-marks">0</strong> marks
+          </div>
+          {% for group in form.question_sets %}
+          <details class="pick-set" style="margin:8px 0;border:1px solid #bbb;padding:6px 10px;"{% if forloop.first or group.picked %} open{% endif %}>
+            <summary><strong>{{ group.name }}</strong> &mdash; {{ group.count }} question(s), {{ group.marks }} marks
+              <span style="color:#666;">(<span class="set-picked">0</span> selected)</span></summary>
+            <p style="margin:6px 0;"><a href="#" class="select-set" style="font-size:.85rem;">select whole set / none</a></p>
+            {% for marks, items in group.sections %}
+            <fieldset data-marks="{{ marks }}" style="margin:8px 0;border:1px solid #ccc;padding:8px;">
+              <legend><strong>{{ marks }}-mark questions ({{ items|length }})</strong>
+                <a href="#" class="select-all" style="font-size:.85rem;margin-left:8px;">select all / none</a></legend>
+              {% for number, box in items %}
+                <div>{{ number }}. {{ box.tag }} <label for="{{ box.id_for_label }}">{{ box.choice_label }}</label></div>
+              {% endfor %}
+            </fieldset>
             {% endfor %}
-          </fieldset>
+          </details>
           {% endfor %}
         {% else %}
           {{ field }}
@@ -34,15 +44,45 @@
   <p>Student list template: <a href="{% url 'student_template' %}">CSV</a> | <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
   <p><a href="{% url 'teach_home' %}">Back</a></p>
 </div>
+{% if has_questions %}
 <script>
-  // "select all / none" for one marks section
+  const ticked = (parent) => parent.querySelectorAll('input[type=checkbox]:checked').length;
+
+  // the running total at the top of the picker, and the "n selected" next to each set
+  function recount() {
+    let questions = 0, marks = 0;
+    document.querySelectorAll('fieldset[data-marks]').forEach((section) => {
+      const n = ticked(section);
+      questions += n;
+      marks += n * Number(section.dataset.marks);
+    });
+    document.getElementById('pick-count').textContent = questions;
+    document.getElementById('pick-marks').textContent = marks;
+    document.querySelectorAll('details.pick-set').forEach((set) => {
+      set.querySelector('.set-picked').textContent = ticked(set);
+    });
+  }
+
+  // "select all / none" works on whatever it sits in: one marks section, or a whole set
+  function toggleAll(boxes) {
+    const allOn = [...boxes].every((b) => b.checked);
+    boxes.forEach((b) => { b.checked = !allOn; });
+    recount();
+  }
   document.querySelectorAll('.select-all').forEach((link) => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      const boxes = link.closest('fieldset').querySelectorAll('input[type=checkbox]');
-      const allOn = [...boxes].every((b) => b.checked);
-      boxes.forEach((b) => { b.checked = !allOn; });
+      toggleAll(link.closest('fieldset').querySelectorAll('input[type=checkbox]'));
     });
   });
+  document.querySelectorAll('.select-set').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleAll(link.closest('details').querySelectorAll('input[type=checkbox]'));
+    });
+  });
+  document.getElementById('exam-form').addEventListener('change', recount);
+  recount();
 </script>
+{% endif %}
 {% endblock %}
