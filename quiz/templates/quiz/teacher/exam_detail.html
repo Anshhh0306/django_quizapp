@@ -39,7 +39,7 @@
   </form>
   {% endif %}
 
-  <div id="controls">{% include "quiz/teacher/_exam_controls.html" with exam=exam frozen=controls.frozen taking=controls.taking minutes=controls.minutes extend_minutes=controls.extend_minutes can_extend_all=controls.can_extend_all sig=controls.sig %}</div>
+  <div id="controls">{% include "quiz/teacher/_exam_controls.html" with exam=exam frozen=controls.frozen taking=controls.taking reopenable=controls.reopenable strike_rows=controls.strike_rows minutes=controls.minutes extend_minutes=controls.extend_minutes can_extend_all=controls.can_extend_all sig=controls.sig %}</div>
 
   <div id="live">{% include "quiz/teacher/_exam_live.html" %}</div>
 

@@ -9,6 +9,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .exam_device import bind_device, check_device
+from .exam_integrity import (CLIENT_KINDS, ENTER_SECONDS, MAX_STRIKES, STRIKES,
+                             applies, enforce, record_back, record_leave, start_watching)
 from .exam_run import begin_attempt, finalize, is_closed, scores_visible, shuffled_choices
 from .util import to_int
 from .exam_views import _attempt, _ms, _notice, mobile_blocked
@@ -58,6 +60,11 @@ def exam_take(request, token):
             'exam': exam, 'blocked': state == 'blocked', 'device_tag': request.device_id[:DEVICE_TAG],
             'ping_url': reverse('exam_ping', args=[token]), 'done_url': reverse('exam_done', args=[token])})
 
+    attempt = enforce(attempt)  # an overdue absence counts even if the page is reloaded to hide it
+    if attempt.submitted_at:
+        return redirect('exam_done', token=token)
+    start_watching(attempt)  # from now the server's own clock for "go fullscreen" runs, whatever the page does
+
     questions = Question.objects.filter(pk__in=attempt.question_ids).prefetch_related('choices')
     by_id = {q.pk: q for q in questions}
     payload_questions = []
@@ -71,6 +78,10 @@ def exam_take(request, token):
         'exam': exam, 'device_tag': request.device_id[:DEVICE_TAG],
         'payload': {
             'questions': payload_questions,
+            'scheduled': exam.mode == Exam.SCHEDULED,  # leaving the window is reported (open exams: never)
+            'enter_seconds': ENTER_SECONDS,
+            'anti_cheat': applies(exam, attempt), 'strikes': attempt.strikes, 'max_strikes': MAX_STRIKES,
+            'event_url': reverse('exam_event', args=[token]),
             'low_seconds': min(300, (exam.duration_minutes or 0) * 6),  # the timer turns red in the last 10% (at most 5 minutes)
             'answers': {str(a.question_id): a.choice_id for a in attempt.answers.all()},
             'deadline_ms': _ms(attempt.ends_at) if attempt.ends_at else None,
@@ -98,6 +109,9 @@ def exam_answer(request, token):
     state = check_device(request, attempt)
     if state != 'ok':  # frozen (423) or turned away (403): nothing is saved from this browser
         return JsonResponse({'ok': False, 'reason': state}, status=423 if state == 'frozen' else 403)
+    attempt = enforce(attempt)  # saving answers is a check-in too: a page that never pings still gets counted
+    if attempt.submitted_at:
+        return JsonResponse({'ok': False, 'reason': 'closed'}, status=409)
 
     qid, raw_choice = to_int(request.POST.get('question', '')), request.POST.get('choice', '')
     if qid is None or qid not in attempt.question_ids:
@@ -148,8 +162,39 @@ def exam_ping(request, token):
     if is_closed(attempt, now):
         finalize(attempt, now)
         return JsonResponse({'state': 'closed'})
-    return JsonResponse({'state': check_device(request, attempt, now), 'now_ms': _ms(now),
-                         'deadline_ms': _ms(attempt.ends_at) if attempt.ends_at else None})
+    state = check_device(request, attempt, now)
+    if state == 'ok':  # only the seat's own browser can make the server count anything against the student
+        attempt = enforce(attempt, now)
+        if attempt.submitted_at:
+            return JsonResponse({'state': 'closed'})
+    return JsonResponse({'state': state, 'now_ms': _ms(now),
+                         'deadline_ms': _ms(attempt.ends_at) if attempt.ends_at else None,
+                         'anti_cheat': applies(exam, attempt), 'strikes': attempt.strikes, 'max_strikes': MAX_STRIKES})
+
+
+@never_cache
+@login_required
+@require_POST
+def exam_event(request, token):
+    """The exam page reports that the exam window was left ('hidden', 'blur', 'fullscreen') or that the student is back."""
+    exam = get_object_or_404(Exam, token=token)
+    attempt = ExamAttempt.objects.filter(exam=exam, user=request.user).select_related('exam').first()
+    if not attempt or not attempt.started_at:
+        return JsonResponse({'ok': False, 'reason': 'not_started'}, status=409)
+    if is_closed(attempt):
+        finalize(attempt)
+        return JsonResponse({'ok': False, 'reason': 'closed', 'closed': True}, status=409)
+    if check_device(request, attempt) == 'blocked':  # another browser cannot add or remove strikes
+        return JsonResponse({'ok': False, 'reason': 'blocked'}, status=403)
+    kind, counted = request.POST.get('kind', ''), False
+    if kind in CLIENT_KINDS:
+        attempt, counted = record_leave(attempt, kind)
+    elif kind == 'back':
+        attempt = record_back(attempt, to_int(request.POST.get('away', ''), 10**6) or 0)  # clamped to what the server saw
+    else:
+        return JsonResponse({'ok': False, 'reason': 'bad_kind'}, status=400)
+    return JsonResponse({'ok': True, 'counted': counted, 'closed': bool(attempt.submitted_at),
+                         'anti_cheat': applies(exam, attempt), 'strikes': attempt.strikes, 'max_strikes': MAX_STRIKES})
 
 
 @never_cache
@@ -163,7 +208,9 @@ def exam_done(request, token):
             return redirect('exam_take', token=token)  # still in progress
         attempt = finalize(attempt)
 
-    context = {'exam': exam, 'attempt': attempt, 'started': bool(attempt.started_at)}
+    context = {'exam': exam, 'attempt': attempt, 'started': bool(attempt.started_at),
+               'by_strikes': attempt.submit_reason == STRIKES, 'max_strikes': MAX_STRIKES,
+               'ping_url': reverse('exam_ping', args=[token])}
     # Scheduled exams reveal the score only once nobody is still working (extra time included),
     # so early finishers can't pass anything on.
     if attempt.submitted_at and scores_visible(exam):

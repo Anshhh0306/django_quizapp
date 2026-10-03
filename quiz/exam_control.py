@@ -84,6 +84,41 @@ def grant_extra(attempt, minutes, actor):
         return None
 
 
+def reopen(attempt, minutes, actor):
+    """Undo an automatic submission (three strikes): the student carries on with their answers kept, strikes back to
+    zero, plus optional extra minutes. Only while the exam is still running, so nobody has seen a score yet.
+    Returns an error message, or None when it worked."""
+    with transaction.atomic():
+        a = _locked(attempt)
+        if minutes not in EXTRA_MINUTES:
+            return 'Choose how many extra minutes to give (0 for none).'
+        if not a.submitted_at or a.submit_reason != 'strikes':
+            return 'This student was not submitted automatically.'
+        if a.exam.phase() != 'running':
+            return 'The exam is over, so this student cannot be reopened.'
+        now = timezone.now()
+        a.ends_at = max(a.ends_at or now, now) + timedelta(minutes=minutes)
+        a.extra_seconds += minutes * 60
+        a.submitted_at = a.score = a.away_since = None
+        a.total_points, a.strikes, a.submit_reason = 0, 0, ''
+        a.save()
+        extra = f', +{minutes} min' if minutes else ''
+        log_event(a.exam, 'reopen', f'{a.user.username}: reopened after the automatic submission, strikes cleared{extra}', a, actor)
+        return None
+
+
+def set_strikes_off(attempt, off, actor):
+    """Switch strikes (and the fullscreen rule) off or on for one student, e.g. for assistive technology."""
+    with transaction.atomic():
+        a = _locked(attempt)
+        a.strikes_off = off
+        # switched ON: the student gets a fresh clock to go fullscreen; switched OFF: nothing is owed any more
+        a.away_since = None if off else (None if a.submitted_at else timezone.now())
+        a.save(update_fields=['strikes_off', 'away_since'])
+        log_event(a.exam, 'strikes_off' if off else 'strikes_on',
+                  f'{a.user.username}: strikes and the fullscreen rule turned {"off" if off else "on"}', a, actor)
+
+
 def extend_all(exam, minutes, actor):
     """Everyone still taking the exam gets more time (power cut, network trouble). Returns an error message or None."""
     if minutes not in EXTEND_ALL_MINUTES:

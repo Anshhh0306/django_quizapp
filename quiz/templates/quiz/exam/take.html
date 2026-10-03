@@ -43,6 +43,16 @@
     <p><small>Green = answered. You can go to any question and change answers until time runs out.</small></p>
     <button type="button" class="btn btn-create" id="submit">Submit exam</button>
     <p><small>Device code: <strong>{{ device_tag }}</strong></small></p>
+    <p id="strike-line" style="display:none;"><small>Warnings: <strong id="strike-count"></strong></small></p>
+  </div>
+</div>
+
+<div id="gate" style="display:none;position:fixed;inset:0;z-index:60;align-items:center;justify-content:center;text-align:center;padding:24px;background:rgba(255,255,255,.97);">
+  <div style="max-width:520px;background:#fff;padding:28px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.25);">
+    <h2 id="gate-title">Fullscreen exam</h2>
+    <p id="gate-text"></p>
+    <p id="gate-error" class="error" style="display:none;"></p>
+    <button type="button" class="btn btn-create" id="gate-button">Enter fullscreen and continue</button>
   </div>
 </div>
 
@@ -160,10 +170,105 @@
   }
   setInterval(() => { if (unsaved()) flush(); }, 3000);
 
+  // ---- the exam window (scheduled exams): fullscreen is required and leaving it costs a strike ----
+  // The page only REPORTS; the server counts, so reloading cannot reset anything. See quiz/exam_integrity.py.
+  const MAX = data.max_strikes;
+  // `scheduled`: leaving the window is reported. `antiCheat`: strikes and the fullscreen rule are in force (the teacher
+  // can switch them off for one student; leaving is then still reported, but fullscreen is not required).
+  const scheduled = data.scheduled;
+  let antiCheat = data.anti_cheat, strikes = data.strikes, frozenNow = false;
+  let armed = false;                 // true once the student has been in the window (and in fullscreen, if required)
+  let awayNow = false, awaySince = 0, graceUntil = 0;
+  const pendingEvents = [];
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const inWindow = () => !document.hidden && document.hasFocus() && (!antiCheat || !!fsElement());
+  const awayKind = () => document.hidden ? 'hidden' : (antiCheat && !fsElement()) ? 'fullscreen' : 'blur';
+
+  function updateGate() {
+    const show = antiCheat && !finished && !frozenNow && !fsElement();
+    $('gate').style.display = show ? 'flex' : 'none';
+    document.querySelector('.exam-wrap').inert = show || frozenNow;  // nothing underneath can be clicked or focused
+    $('gate-title').textContent = strikes > 0 ? 'Back to the exam' : 'Fullscreen exam';
+    $('gate-text').textContent = strikes > 0
+      ? 'Warning ' + strikes + ' of ' + MAX + ': you left the exam window. ' + (MAX - strikes) + ' more and your exam is submitted automatically. Click anywhere or press any key to go back to fullscreen.'
+      : 'This exam must be taken in fullscreen. Click anywhere or press any key to go fullscreen within ' + data.enter_seconds + ' seconds; after that it counts as a strike. Leaving the exam window (another tab or window, minimizing, or leaving fullscreen) is recorded: the first two times you get a warning and the third submits your exam automatically.';
+    $('strike-line').style.display = antiCheat ? '' : 'none';
+    $('strike-count').textContent = strikes + ' of ' + MAX;
+  }
+
+  let entering = false;
+  async function enterFullscreen() {
+    if (entering || fsElement()) return;
+    entering = true;
+    $('gate-error').style.display = 'none';
+    const el = document.documentElement;
+    try {
+      if (el.requestFullscreen) await el.requestFullscreen({navigationUI: 'hide'});
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+      else throw new Error('no fullscreen');
+      // Chrome, Edge and Brave: a quick tap of Esc no longer leaves fullscreen (it takes a 2-second hold)
+      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+    } catch (e) {
+      if (!fsElement()) {
+        $('gate-error').textContent = 'This browser would not go fullscreen. Use Chrome, Edge or Firefox on a laptop or desktop computer, or ask your teacher.';
+        $('gate-error').style.display = '';
+      }
+    } finally {
+      entering = false;
+    }
+  }
+  $('gate-button').onclick = enterFullscreen;
+  // Any click or key press while not in fullscreen takes the student straight back (browsers only allow this on a user action).
+  ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, (e) => {
+    if (ev === 'keydown' && e.key === 'Escape') return;
+    if (antiCheat && !finished && !frozenNow && !fsElement()) enterFullscreen();
+  }, true));
+
+  async function sendEvent(kind, away) {
+    const body = new URLSearchParams({kind});
+    if (away !== undefined) body.set('away', away);
+    try {
+      const r = await fetch(data.event_url, {method: 'POST', body, credentials: 'same-origin', headers: {'X-CSRFToken': csrf}});
+      let j = null;
+      try { j = await r.json(); } catch (e) {}
+      if (r.status === 409) { finish(); return; }
+      if (r.status === 403 && j && j.reason === 'blocked') { setBlocked(); return; }
+      if (j && j.ok) {
+        if (j.closed) { finish(); return; }  // the third strike: the server has submitted the exam
+        antiCheat = j.anti_cheat; strikes = j.strikes;
+        updateGate();
+      }
+    } catch (e) {
+      pendingEvents.push([kind, away]);  // offline: neither a leave nor "I am back" may be lost, try again soon
+    }
+  }
+  setInterval(() => { const next = pendingEvents.shift(); if (next) sendEvent(next[0], next[1]); }, 3000);
+
+  function checkWindow() {
+    if (!finished && scheduled) {
+      if (inWindow()) {
+        // First time in fullscreen: tell the server, which has been counting since this page opened (45 seconds to get here).
+        if (!armed) { armed = true; graceUntil = performance.now() + 2000; sendEvent('back', 0); }
+        if (awayNow) { awayNow = false; sendEvent('back', Math.round((Date.now() - awaySince) / 1000)); }
+      } else if (armed && !awayNow && performance.now() >= graceUntil) {
+        awayNow = true; awaySince = Date.now(); sendEvent(awayKind());
+      }
+      // While away, the SERVER adds a strike each minute by itself (on every check-in), so there is nothing to repeat here.
+    }
+    updateGate();
+  }
+  document.addEventListener('visibilitychange', checkWindow);
+  document.addEventListener('fullscreenchange', checkWindow);
+  document.addEventListener('webkitfullscreenchange', checkWindow);
+  window.addEventListener('blur', checkWindow);
+  window.addEventListener('focus', checkWindow);
+  setInterval(checkWindow, 1000);
+
   // ---- freeze: a blurred, locked screen until the teacher releases this seat ----
   function setFrozen(on) {
+    frozenNow = on;
     $('freeze').style.display = on ? 'flex' : 'none';
-    document.querySelector('.exam-wrap').inert = on;  // nothing underneath can be clicked or focused
+    updateGate();
   }
   function setBlocked() {
     finished = true;
@@ -176,6 +281,10 @@
   function applyPing(d) {
     if (d.state === 'closed') { finish(); return; }
     if (d.state === 'blocked') { setBlocked(); return; }
+    if (d.anti_cheat !== undefined) {
+      if (d.anti_cheat !== antiCheat) { armed = false; awayNow = false; }  // the rules changed: start clean (on = the fullscreen button first)
+      antiCheat = d.anti_cheat; strikes = d.strikes;
+    }
     setFrozen(d.state === 'frozen');
     if (d.deadline_ms !== undefined) { data.deadline_ms = d.deadline_ms; data.now_ms = d.now_ms; t0 = performance.now(); }
     if (d.state === 'ok' && unsaved()) flush();
@@ -245,6 +354,7 @@
   $('submit').onclick = () => submit();
   render();
   drawTimer();
+  updateGate();
 })();
 </script>
 {% endblock %}

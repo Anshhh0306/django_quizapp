@@ -17,7 +17,7 @@
 
   <table border="1" cellpadding="6" style="border-collapse:collapse;width:100%;">
     <thead>
-      <tr><th>Student</th><th>Status</th><th>Score</th><th>%</th><th>Correct</th><th>Wrong</th><th>Unanswered</th><th>Time</th><th>Reconnects</th><th></th></tr>
+      <tr><th>Student</th><th>Status</th><th>Score</th><th>%</th><th>Correct</th><th>Wrong</th><th>Unanswered</th><th>Time</th><th>Reconnects</th><th>Strikes</th><th>Left window</th><th></th></tr>
     </thead>
     <tbody>
     {% for r in rows %}
@@ -31,10 +31,12 @@
         <td>{% if r.unanswered is not None %}{{ r.unanswered }}{% else %}&ndash;{% endif %}</td>
         <td>{{ r.minutes|default:"&ndash;" }}</td>
         <td>{{ r.rejoins|default:"" }}</td>
+        <td>{{ r.strikes|default:"" }}{% if r.auto %} <small>(auto-submitted)</small>{% endif %}</td>
+        <td>{{ r.leaves|default:"" }}</td>
         <td>{% if r.attempt and r.attempt.started_at %}<a href="{% url 'exam_result_detail' exam.pk r.attempt.pk %}">View answers</a>{% endif %}</td>
       </tr>
     {% empty %}
-      <tr><td colspan="10">Nobody has joined yet.</td></tr>
+      <tr><td colspan="12">Nobody has joined yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>

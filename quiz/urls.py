@@ -46,6 +46,7 @@ urlpatterns = [
     path('exam/<str:token>/take/', exam_take.exam_take, name='exam_take'),
     path('exam/<str:token>/ping/', exam_take.exam_ping, name='exam_ping'),
     path('exam/<str:token>/answer/', exam_take.exam_answer, name='exam_answer'),
+    path('exam/<str:token>/event/', exam_take.exam_event, name='exam_event'),
     path('exam/<str:token>/submit/', exam_take.exam_submit, name='exam_submit'),
     path('exam/<str:token>/done/', exam_take.exam_done, name='exam_done'),
 ]

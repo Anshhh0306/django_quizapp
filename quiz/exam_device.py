@@ -79,6 +79,20 @@ def _turn_away(a, device, label, ip, now):
         last_intruder_ip=ip, last_intrusion_at=now)
 
 
+def _note_copied_code(attempt, label, ip, now):
+    """The locked device code arrived from a different KIND of browser than it was first seen on. Browsers keep their
+    own cookies, so this means the code was copied to another browser. Flag only: the teacher decides what it means."""
+    if not attempt.device_label or label == attempt.device_label:
+        return
+    if attempt.last_mismatch_at and now - attempt.last_mismatch_at < timedelta(seconds=60):  # one line a minute, not one per ping
+        return
+    ExamAttempt.objects.filter(pk=attempt.pk).update(mismatches=F('mismatches') + 1, last_mismatch_at=now)
+    attempt.last_mismatch_at = now
+    log_event(attempt.exam, 'copied_code',
+              f'{attempt.user.username}: device code {attempt.device_tag} (first seen on {attempt.device_label}) is also '
+              f'being used from {label} ({ip}). The exam link or browser data may have been copied.', attempt)
+
+
 def _other_device(attempt, device, label, ip, now):
     """A browser that is not the locked one. Decided on a freshly locked copy of the seat, because the copy the
     request loaded may be stale (the teacher can unfreeze or turn this very browser away at the same moment)."""
@@ -97,7 +111,9 @@ def _other_device(attempt, device, label, ip, now):
         a.frozen_at = now  # the student's own browser went quiet: pause the seat for the teacher
         a.freezes += 1
         a.challenger_id, a.challenger_label, a.challenger_ip = device, label, ip
-        a.save(update_fields=['frozen_at', 'freezes', 'challenger_id', 'challenger_label', 'challenger_ip'])
+        a.freeze_silent_seconds = int((now - a.device_seen_at).total_seconds()) if a.device_seen_at else None
+        a.save(update_fields=['frozen_at', 'freezes', 'challenger_id', 'challenger_label', 'challenger_ip',
+                              'freeze_silent_seconds'])
         attempt.frozen_at = now
         log_event(a.exam, 'freeze', f'{a.user.username} was opened on {label} ({ip}) while locked to '
                                     f'{a.device_label} ({a.device_ip}), which had gone quiet', a)
@@ -116,5 +132,6 @@ def check_device(request, attempt, now=None):
         return 'ok'
     if attempt.device_id == device:
         _touch(attempt, now)
+        _note_copied_code(attempt, label, ip, now)
         return 'frozen' if attempt.frozen_at else 'ok'
     return _other_device(attempt, device, label, ip, now)

@@ -214,6 +214,18 @@ class ExamAttempt(models.Model):
     last_intruder_ip = models.GenericIPAddressField(null=True, blank=True)
     last_intrusion_at = models.DateTimeField(null=True, blank=True)
     extra_seconds = models.PositiveIntegerField(default=0)        # extra time the teacher granted
+    # --- leaving the exam window (scheduled exams) ---
+    strikes = models.PositiveIntegerField(default=0)              # counted warnings; the third submits the exam
+    leaves = models.PositiveIntegerField(default=0)               # every time the window was left, strikes on or off
+    last_leave_at = models.DateTimeField(null=True, blank=True)   # the last report that counted (also used to ignore duplicates)
+    away_since = models.DateTimeField(null=True, blank=True)      # set while the student is away, cleared when they come back
+    away_seconds = models.PositiveIntegerField(default=0)         # total time away, as reported by the page (bounded by the server)
+    strikes_off = models.BooleanField(default=False)              # the teacher switched strikes and the fullscreen rule off for this student
+    submit_reason = models.CharField(max_length=20, blank=True)   # 'strikes' when the server submitted the exam for leaving it
+    # --- evidence for the teacher ---
+    mismatches = models.PositiveIntegerField(default=0)           # the locked device code was used from a different kind of browser
+    last_mismatch_at = models.DateTimeField(null=True, blank=True)
+    freeze_silent_seconds = models.PositiveIntegerField(null=True, blank=True)  # how long the original device had been silent when the seat froze
 
     class Meta:
         unique_together = ['exam', 'user']
