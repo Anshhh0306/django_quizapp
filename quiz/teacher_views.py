@@ -3,9 +3,11 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.db.models import Count, Prefetch
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 from .exam_control import EXTEND_ALL_MINUTES, EXTRA_MINUTES, extend_all, grant_extra, reset_device, unfreeze
 from .util import to_int
@@ -14,7 +16,8 @@ from .exam_run import COUNTDOWN_SECONDS, end_exam, finalize_expired, start_exam
 from .exams import (QUESTION_ROWS, STUDENT_ROWS, create_questions, parse_allowed, parse_questions, read_student_list,
                     read_upload, template_bytes)
 from .forms import ExamForm
-from .models import Exam, ExamAllowed, ExamAttempt, Question
+from .models import Choice, Exam, ExamAllowed, ExamAttempt, Question, QuestionSet
+from .question_sets import create_set, delete_set, name_for_upload
 from .roles import role_of
 
 
@@ -33,25 +36,80 @@ def teach_home(request):
     return render(request, 'quiz/teacher/home.html', {'exams': request.user.exams.order_by('-created_at')})
 
 
+def _bank_context(user):
+    """What the question bank page shows: the visible sets with their numbered questions, then the hidden sets."""
+    in_upload_order = Question.objects.order_by('id').prefetch_related(
+        Prefetch('choices', queryset=Choice.objects.order_by('id')))
+    sets = user.question_sets.order_by('-id')  # newest first
+    visible = list(sets.filter(hidden=False).prefetch_related(Prefetch('questions', queryset=in_upload_order)))
+    hidden = list(sets.filter(hidden=True).annotate(question_count=Count('questions')))
+    used = {}  # set id -> titles of the exams that use any of its questions
+    for set_id, _, title in (Exam.questions.through.objects.filter(question__question_set__owner=user)
+                             .values_list('question__question_set', 'exam_id', 'exam__title')
+                             .distinct().order_by('exam__title')):
+        used.setdefault(set_id, []).append(title)
+    for qset in visible:
+        qset.question_list = list(qset.questions.all())
+        qset.mark_total = sum(q.points for q in qset.question_list)
+        qset.used_by = used.get(qset.pk, [])
+    for qset in hidden:
+        qset.used_by = used.get(qset.pk, [])
+    return {'sets': visible, 'hidden_sets': hidden, 'count': user.question_bank.count(),
+            'set_count': len(visible) + len(hidden)}
+
+
 @teacher_required
 def question_bank(request):
+    typed_name = ''
     if request.method == 'POST':
         upload = request.FILES.get('file')
+        typed_name = request.POST.get('name', '')
         if not upload:
-            messages.error(request, 'Choose a CSV file first.')
+            messages.error(request, 'Choose a CSV or Excel file first.')
         else:
             try:
                 rows, errors = parse_questions(read_upload(upload), upload.name)
             except ValueError as e:
                 rows, errors = [], [str(e)]
-            if errors:  # all-or-nothing: fix the file and upload again
+            if errors:  # all-or-nothing: fix the file and upload again (no empty set is left behind either)
                 return render(request, 'quiz/teacher/questions.html', {
-                    'errors': errors, 'count': request.user.question_bank.count()})
+                    **_bank_context(request.user), 'errors': errors, 'typed_name': typed_name})
+            wanted = name_for_upload(typed_name, upload.name)
             with transaction.atomic():
-                added = create_questions(request.user, rows)
-            messages.success(request, f'{added} question(s) added to your bank.')
+                qset = create_set(request.user, wanted)
+                added = create_questions(request.user, rows, qset)
+            note = f' (you already had a set called "{wanted}")' if qset.name != wanted else ''
+            messages.success(request, f'{added} question(s) added as the set "{qset.name}"{note}.')
             return redirect('question_bank')
-    return render(request, 'quiz/teacher/questions.html', {'count': request.user.question_bank.count()})
+    return render(request, 'quiz/teacher/questions.html', {**_bank_context(request.user), 'typed_name': typed_name})
+
+
+@teacher_required
+@require_POST
+def question_set_action(request, pk):
+    """Delete, hide or un-hide one of your sets."""
+    qset = get_object_or_404(QuestionSet, pk=pk, owner=request.user)  # only your own sets
+    action = request.POST.get('action')
+    if action == 'delete':
+        count = qset.questions.count()
+        titles = delete_set(qset)
+        if titles:
+            shown = ', '.join(titles[:5]) + (f' and {len(titles) - 5} more' if len(titles) > 5 else '')
+            messages.error(request, f'"{qset.name}" is used by {len(titles)} exam(s) ({shown}), so it cannot be '
+                                    f'deleted. Hide it instead.')
+        else:
+            messages.success(request, f'Deleted "{qset.name}" and its {count} question(s).')
+    elif action in ('hide', 'unhide'):
+        qset.hidden = action == 'hide'
+        qset.save(update_fields=['hidden'])
+        if qset.hidden:
+            messages.success(request, f'Hid "{qset.name}". It is no longer offered when you create exams; exams that '
+                                      f'already use it are not affected. You can bring it back under "Hidden sets".')
+        else:
+            messages.success(request, f'"{qset.name}" is back in your question bank.')
+    else:
+        messages.error(request, 'Unknown action.')
+    return redirect('question_bank')
 
 
 @teacher_required
@@ -66,7 +124,8 @@ def exam_new(request):
             ExamAllowed.objects.bulk_create(
                 ExamAllowed(exam=exam, email=e) for e in form.cleaned_data['allowed_emails'])
         return redirect('exam_detail', pk=exam.pk)
-    return render(request, 'quiz/teacher/exam_form.html', {'form': form, 'has_questions': request.user.question_bank.exists()})
+    return render(request, 'quiz/teacher/exam_form.html', {
+        'form': form, 'has_questions': form.fields['questions'].queryset.exists()})  # hidden sets do not count
 
 
 @teacher_required
