@@ -7,10 +7,13 @@ from django.db.models import Count, Prefetch
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .exam_control import EXTEND_ALL_MINUTES, EXTRA_MINUTES, extend_all, grant_extra, reset_device, unfreeze
+from .exam_control import (EXTEND_ALL_MINUTES, EXTRA_MINUTES, extend_all, grant_extra, reopen, reset_device,
+                           set_strikes_off, unfreeze)
 from .exam_device import log_event
+from .exam_integrity import MAX_STRIKES, freeze_evidence, integrity_rows
 from .util import to_int
 from .exam_results import result_rows, result_summary, result_table
 from .exam_run import COUNTDOWN_SECONDS, end_exam, finalize_expired, start_exam
@@ -171,7 +174,7 @@ def exam_detail(request, pk):
         elif action == 'end' and exam.status in (Exam.LOBBY, Exam.RUNNING):
             end_exam(exam)
             messages.success(request, 'Exam ended. All answers so far were submitted.')
-        elif action in ('unfreeze', 'extra_time', 'reset_device'):
+        elif action in ('unfreeze', 'extra_time', 'reset_device', 'reopen', 'strikes'):
             attempt_id = to_int(request.POST.get('attempt', ''))
             attempt = exam.attempts.filter(pk=attempt_id).select_related('user').first() if attempt_id is not None else None
             minutes = to_int(request.POST.get('minutes', ''))
@@ -189,6 +192,18 @@ def exam_detail(request, pk):
                     messages.success(request, f'{attempt.user.username} can continue.')
                 else:
                     messages.error(request, f'{attempt.user.username} is not frozen.')
+            elif action == 'reopen':
+                error = reopen(attempt, minutes, request.user)
+                messages.error(request, error) if error else messages.success(
+                    request, f'{attempt.user.username} can continue; their answers were kept and their strikes cleared.')
+            elif action == 'strikes':
+                off = request.POST.get('value') == 'off'
+                if exam.mode != Exam.SCHEDULED:
+                    messages.error(request, 'Strikes only apply to scheduled exams.')
+                else:
+                    set_strikes_off(attempt, off, request.user)
+                    messages.success(request, f'{attempt.user.username}: strikes and the fullscreen rule are now '
+                                              f'{"off" if off else "on"}.')
             else:
                 error = grant_extra(attempt, minutes, request.user)
                 messages.error(request, error) if error else messages.success(
@@ -267,21 +282,34 @@ def _live_context(exam):
         # other browsers turned away while the student's own browser was working (to look into later)
         'intruders': exam.attempts.filter(intrusions__gt=0).select_related('user').order_by('-last_intrusion_at')[:50],
         'events': exam.events.select_related('actor')[:30],  # the audit log, newest first
+        'integrity': integrity_rows(exam),  # strikes, silent pages, copied device codes: who to look at
+        'max_strikes': MAX_STRIKES,
     }
 
 
 def _controls_context(exam):
     """Frozen seats and the extra-time boxes. Rendered on its own so typing in a dropdown is never wiped by a refresh."""
+    now = timezone.now()
     frozen = list(exam.attempts.filter(frozen_at__isnull=False, submitted_at__isnull=True)
-                  .select_related('user').order_by('frozen_at'))
+                  .select_related('user').annotate(answered=Count('answers')).order_by('frozen_at'))
+    for a in frozen:
+        a.evidence = freeze_evidence(a, now)  # what the teacher needs to decide: silence, network, progress, history
     taking = list(exam.attempts.filter(started_at__isnull=False, submitted_at__isnull=True)
                   .select_related('user').order_by('user__username'))
+    scheduled = exam.mode == Exam.SCHEDULED
+    reopenable = list(exam.attempts.filter(submit_reason='strikes', submitted_at__isnull=False).select_related('user')
+                      .order_by('user__username')) if scheduled and exam.phase() == 'running' else []
+    strike_rows = list(exam.attempts.filter(submitted_at__isnull=True).select_related('user')
+                       .order_by('user__username')) if scheduled else []
     return {
-        'exam': exam, 'frozen': frozen, 'taking': taking,
+        'exam': exam, 'frozen': frozen, 'taking': taking, 'reopenable': reopenable, 'strike_rows': strike_rows,
         'minutes': EXTRA_MINUTES, 'extend_minutes': EXTEND_ALL_MINUTES,
-        'can_extend_all': exam.mode == Exam.SCHEDULED and exam.phase() == 'running',
-        # the page only swaps this panel in when the sig changes (someone froze / unfroze / joined)
-        'sig': '|'.join(f'{a.pk}:{a.freezes}' for a in frozen) + '#' + ','.join(str(a.pk) for a in taking),
+        'can_extend_all': scheduled and exam.phase() == 'running',
+        # the page only swaps this panel in when the sig changes (someone froze / unfroze / joined / was auto-submitted /
+        # had strikes switched); while seats are frozen it also changes every 10 seconds so the evidence stays fresh
+        'sig': ('|'.join(f'{a.pk}:{a.freezes}:{int(now.timestamp() // 10)}' for a in frozen) + '#'
+                + ','.join(str(a.pk) for a in taking) + '#R' + ','.join(str(a.pk) for a in reopenable)
+                + '#S' + ','.join(f'{a.pk}{int(a.strikes_off)}' for a in strike_rows)),
     }
 
 

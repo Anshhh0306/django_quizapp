@@ -27,6 +27,30 @@
 <p>Nobody has joined yet.</p>
 {% endif %}
 
+{% if integrity %}
+<h3>Integrity flags ({{ integrity|length }})</h3>
+<p><small>A strike is counted each time a student leaves the exam window (another tab or window, minimizing, leaving fullscreen); staying away adds one more each minute. A silent page is only a flag: it can be another window, a dropped connection or a throttled background tab. Nothing here is decided automatically except the third strike.</small></p>
+<table border="1" cellpadding="4" style="border-collapse:collapse;">
+  <tr><th>Student</th><th>Strikes</th><th>Left the window</th><th>Away in total</th><th>Notes</th></tr>
+  {% for row in integrity %}{% with a=row.attempt %}
+  <tr>
+    <td>{{ a.user.username }}</td>
+    <td>{{ a.strikes }} of {{ max_strikes }}{% if a.strikes_off %} <em>(strikes off)</em>{% endif %}</td>
+    <td>{{ a.leaves }}</td>
+    <td>{{ a.away_seconds }} s</td>
+    <td>
+      {% if a.submit_reason == 'strikes' %}<strong>submitted automatically after {{ max_strikes }} strikes.</strong> {% endif %}
+      {% if row.away_now is not None %}<strong>{% if a.leaves == 0 %}not in fullscreen{% else %}away right now{% endif %} ({{ row.away_now }} s).</strong> {% endif %}
+      {% if row.silent %}No signal from the page for {{ row.silent }} s. {% endif %}
+      {% if a.mismatches %}Device code used from a different browser. {% endif %}
+      {% if a.intrusions %}{{ a.intrusions }} other-device attempt{{ a.intrusions|pluralize }}. {% endif %}
+      {% if a.freezes %}Frozen {{ a.freezes }} time{{ a.freezes|pluralize }}.{% endif %}
+    </td>
+  </tr>
+  {% endwith %}{% endfor %}
+</table>
+{% endif %}
+
 {% if intruders %}
 <h3>Other-device attempts ({{ intruders|length }})</h3>
 <p><small>Another device tried to use these students' accounts while the student's own device was working. It was turned away and the student was not interrupted. You may want to ask them about it after the exam.</small></p>

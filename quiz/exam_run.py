@@ -75,8 +75,8 @@ def is_closed(attempt, now=None):
     return bool(attempt.ends_at and now > attempt.ends_at + timedelta(seconds=GRACE_SECONDS))
 
 
-def finalize(attempt, now=None):
-    """Score and lock an attempt. Safe to call twice."""
+def finalize(attempt, now=None, reason=''):
+    """Score and lock an attempt. Safe to call twice. `reason` says why the server did it ('strikes'), if it did."""
     now = now or timezone.now()
     with transaction.atomic():
         a = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
@@ -87,7 +87,8 @@ def finalize(attempt, now=None):
         a.total_points = sum(questions.values())
         a.score = sum(points for qid, points in questions.items() if qid in correct)
         a.submitted_at = min(now, a.ends_at) if a.ends_at else now  # a late auto-submit is stamped at the deadline
-        a.save(update_fields=['total_points', 'score', 'submitted_at'])
+        a.submit_reason = reason
+        a.save(update_fields=['total_points', 'score', 'submitted_at', 'submit_reason'])
         return a
 
 

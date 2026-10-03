@@ -4,9 +4,9 @@ from django.db.models import Count, Q
 from .exam_run import finalize, finalize_expired, is_closed, scores_visible
 
 HEADER = ['Student', 'Email', 'Status', 'Questions', 'Answered', 'Correct', 'Wrong', 'Unanswered',
-          'Score', 'Out of', 'Percent', 'Time taken (m:ss)', 'Reconnects']
+          'Score', 'Out of', 'Percent', 'Time taken (m:ss)', 'Reconnects', 'Strikes', 'Left the window', 'Auto-submitted']
 KEYS = ('name', 'email', 'status', 'questions', 'answered', 'right', 'wrong', 'unanswered',
-        'score', 'total', 'percent', 'minutes', 'rejoins')
+        'score', 'total', 'percent', 'minutes', 'rejoins', 'strikes', 'leaves', 'auto')
 FROZEN = 'Frozen: needs teacher'
 STATUS_ORDER = {'Submitted': 0, FROZEN: 1, 'In progress': 2, 'Joined, did not start': 3, 'Did not join': 4}
 
@@ -34,7 +34,8 @@ def result_rows(exam, now=None):
             'score': a.score, 'total': a.total_points if a.submitted_at else None,
             'percent': round(a.score * 100 / a.total_points) if a.submitted_at and a.total_points else None,
             'minutes': f'{seconds // 60}:{seconds % 60:02d}' if seconds is not None else '',
-            'rejoins': a.rejoins,
+            'rejoins': a.rejoins, 'strikes': a.strikes, 'leaves': a.leaves,
+            'auto': 'Yes (strikes)' if a.submit_reason == 'strikes' else '',
         })
     rows.sort(key=lambda r: (STATUS_ORDER[r['status']], -(r['score'] or 0), r['name']))
 
@@ -43,7 +44,8 @@ def result_rows(exam, now=None):
         if email.lower() not in joined:
             rows.append({'attempt': None, 'name': email.split('@')[0], 'email': email.lower(), 'status': 'Did not join',
                          'questions': None, 'answered': None, 'right': None, 'wrong': None, 'unanswered': None,
-                         'score': None, 'total': None, 'percent': None, 'minutes': '', 'rejoins': 0})
+                         'score': None, 'total': None, 'percent': None, 'minutes': '', 'rejoins': 0,
+                         'strikes': 0, 'leaves': 0, 'auto': ''})
     return rows
 
 

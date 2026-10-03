@@ -6,7 +6,12 @@
     {% if not started %}
       <p>You did not start this exam.</p>
     {% else %}
-      <p>Your exam has been submitted{% if attempt.submitted_at %} at {{ attempt.submitted_at|time:"H:i" }}{% endif %}. Your answers are saved.</p>
+      {% if by_strikes %}
+        <p><strong>Your exam was submitted automatically</strong> because you collected {{ max_strikes }} strikes for leaving the exam window. Your answers so far are saved. Your teacher can look at what happened and decide whether you may continue.</p>
+        <p id="waiting"><em>Keep this page open. If your teacher lets you continue, you will be taken back to your exam.</em></p>
+      {% else %}
+        <p>Your exam has been submitted{% if attempt.submitted_at %} at {{ attempt.submitted_at|time:"H:i" }}{% endif %}. Your answers are saved.</p>
+      {% endif %}
       {% if show_score %}
         <h3>Your score: {{ attempt.score }} / {{ attempt.total_points }}</h3>
         <h4>Your answers</h4>
@@ -18,4 +23,15 @@
     <p><a href="{% url 'home' %}">Back to home</a></p>
   </div>
 </div>
+{% if by_strikes %}
+<script>
+  // If the teacher reopens the exam, the server stops reporting "closed" and this page sends the student back to it.
+  (function poll() {
+    fetch("{{ ping_url }}", {credentials: 'same-origin'})
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d && d.state === 'ok') { location.reload(); return; } setTimeout(poll, 8000); })
+      .catch(() => setTimeout(poll, 8000));
+  })();
+</script>
+{% endif %}
 {% endblock %}
