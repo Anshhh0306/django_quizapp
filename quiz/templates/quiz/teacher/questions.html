@@ -35,13 +35,27 @@ Which keyword defines a function in Python?,func,def,function,lambda,B,2</pre>
   </details>
 
   <h3>My sets</h3>
+  <p class="help-text">Options are stored in a random order, so they may not match the order in your file. The right answer is ticked.</p>
   {% for qset in sets %}
-    <details class="bank-set" style="margin:8px 0;border:1px solid #bbb;padding:6px 10px;">
-      <summary><strong>{{ qset.name }}</strong> &mdash; {{ qset.question_list|length }} question(s), {{ qset.mark_total }} marks</summary>
-      {% if qset.used_by %}
-        <p class="help-text">Used by: {{ qset.used_by|join:", " }}. It cannot be deleted while an exam uses it; hide it to get it out of the way.</p>
-      {% endif %}
-      <div style="margin:8px 0;">
+    <div style="display:flex;gap:10px;align-items:flex-start;margin:8px 0;">
+      <details class="bank-set" style="flex:1;min-width:0;border:1px solid #bbb;padding:6px 10px;">
+        <summary><strong>{{ qset.name }}</strong> &mdash; {{ qset.question_list|length }} question(s), {{ qset.mark_total }} marks</summary>
+        {% if qset.used_by %}
+          <p class="help-text">Used by: {{ qset.used_by|join:", " }}. It cannot be deleted while an exam uses it; hide it to get it out of the way.</p>
+        {% endif %}
+        <ol>
+          {% for q in qset.question_list %}
+            <li>{{ q.text }} <small>({{ q.points }} mark{{ q.points|pluralize }})</small>
+              <ul>
+                {% for c in q.choices.all %}
+                  <li>{% if c.is_correct %}<strong>&#10003; {{ c.text }}</strong>{% else %}{{ c.text }}{% endif %}</li>
+                {% endfor %}
+              </ul>
+            </li>
+          {% endfor %}
+        </ol>
+      </details>
+      <div style="white-space:nowrap;">
         <form method="post" action="{% url 'question_set_action' qset.pk %}" style="display:inline;">
           {% csrf_token %}<input type="hidden" name="action" value="hide">
           <button type="submit" class="btn btn-view">Hide</button>
@@ -54,20 +68,9 @@ Which keyword defines a function in Python?,func,def,function,lambda,B,2</pre>
         </form>
         {% endif %}
       </div>
-      <ol>
-        {% for q in qset.question_list %}
-          <li>{{ q.text }} <small>({{ q.points }} mark{{ q.points|pluralize }})</small>
-            <ul>
-              {% for c in q.choices.all %}
-                <li>{% if c.is_correct %}<strong>&#10003; {{ c.text }}</strong>{% else %}{{ c.text }}{% endif %}</li>
-              {% endfor %}
-            </ul>
-          </li>
-        {% endfor %}
-      </ol>
-    </details>
+    </div>
   {% empty %}
-    <p>No sets yet. Upload a file above to make your first one.</p>
+    <p>{% if hidden_sets %}All your sets are hidden (see below).{% else %}No sets yet. Upload a file above to make your first one.{% endif %}</p>
   {% endfor %}
 
   {% if hidden_sets %}

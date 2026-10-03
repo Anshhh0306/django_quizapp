@@ -308,8 +308,8 @@ class ControlsPanelTests(DeviceBase):
         self.freeze()
         r = self.panel()
         self.assertContains(r, 'Frozen: needs you (1)')
-        self.assertContains(r, 'Original: Chrome on Windows')
-        self.assertContains(r, 'New: Firefox on Linux (10.1.1.5)')
+        self.assertContains(r, ']: Chrome on Windows')  # each device carries its short code in [brackets]
+        self.assertContains(r, ']: Firefox on Linux (10.1.1.5)')
         self.assertContains(r, 'Unfreeze')
 
     def test_signature_changes_when_someone_freezes_so_the_page_refreshes(self):

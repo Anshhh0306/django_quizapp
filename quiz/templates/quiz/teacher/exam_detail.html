@@ -5,7 +5,8 @@
   <p><a href="{% url 'teach_home' %}">Back</a> | <a href="{% url 'exam_results' exam.pk %}" class="btn btn-view">View results</a></p>
   {% if messages %}{% for m in messages %}<div>{{ m }}</div>{% endfor %}{% endif %}
 
-  <p><strong>Exam link (share with students):</strong><br><code>{{ link }}</code></p>
+  <p><strong>Exam link (share with students):</strong><br><code id="exam-link">{{ link }}</code>
+    <button type="button" class="btn btn-view" id="copy-link">Copy link</button></p>
   <ul>
     <li>Mode: {{ exam.get_mode_display }}{% if exam.duration_minutes %}, {{ exam.duration_minutes }} minutes{% endif %}</li>
     <li>Questions: {{ question_count }}</li>
@@ -27,7 +28,7 @@
     <button type="submit" class="btn btn-create">Start exam (30 second countdown)</button>
   </form>
   {% endif %}
-  {% if exam.status == 'lobby' or exam.status == 'running' %}
+  {% if phase == 'lobby' or phase == 'countdown' or phase == 'running' %}
   <form method="post" class="simple-form" onsubmit="return confirm('End the exam now? Everyone\'s answers so far will be submitted.');">
     {% csrf_token %}
     <input type="hidden" name="action" value="end">
@@ -71,6 +72,12 @@
 </div>
 
 <script>
+  document.getElementById('copy-link').onclick = (e) => {
+    const button = e.target;
+    (navigator.clipboard ? navigator.clipboard.writeText(document.getElementById('exam-link').textContent) : Promise.reject())
+      .then(() => { button.textContent = 'Copied ✓'; }, () => { button.textContent = 'Select the link and press Ctrl+C'; });
+  };
+
   // Refresh the live box (seats, reconnects, turned away) every 5 seconds while this tab is visible.
   const live = document.getElementById('live');
   setInterval(() => {

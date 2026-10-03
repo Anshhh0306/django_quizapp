@@ -136,7 +136,12 @@ class ExamForm(forms.ModelForm):
                 text += '\n' + read_student_list(read_upload(data['allowed_file']), data['allowed_file'].name)
             except ValueError as e:
                 self.add_error('allowed_file', str(e))
-        emails, bad = parse_allowed(text)
+        try:
+            emails, bad = parse_allowed(text)
+        except ValueError as e:  # more students than one class list may hold
+            self.add_error('allowed_text', str(e))
+            self.cleaned_data['allowed_emails'] = []
+            return data
         if bad:
             self.add_error('allowed_text', f'Not valid student IDs: {", ".join(bad[:10])}')
         self.cleaned_data['allowed_emails'] = emails

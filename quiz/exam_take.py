@@ -12,7 +12,7 @@ from .exam_device import bind_device, check_device
 from .exam_run import begin_attempt, finalize, is_closed, scores_visible, shuffled_choices
 from .util import to_int
 from .exam_views import _attempt, _ms, _notice, mobile_blocked
-from .models import Choice, Exam, ExamAnswer, ExamAttempt, Question
+from .models import DEVICE_TAG, Choice, Exam, ExamAnswer, ExamAttempt, Question
 from .roles import is_student
 
 
@@ -55,7 +55,7 @@ def exam_take(request, token):
     state = check_device(request, attempt)
     if state != 'ok':  # a second browser: nothing is shown, not even the questions
         return render(request, 'quiz/exam/frozen.html', {
-            'exam': exam, 'blocked': state == 'blocked',
+            'exam': exam, 'blocked': state == 'blocked', 'device_tag': request.device_id[:DEVICE_TAG],
             'ping_url': reverse('exam_ping', args=[token]), 'done_url': reverse('exam_done', args=[token])})
 
     questions = Question.objects.filter(pk__in=attempt.question_ids).prefetch_related('choices')
@@ -68,9 +68,10 @@ def exam_take(request, token):
             payload_questions.append({'id': q.pk, 'text': q.text, 'points': q.points,
                                       'options': [{'id': c.pk, 'text': c.text} for c in options]})  # never is_correct
     return render(request, 'quiz/exam/take.html', {
-        'exam': exam,
+        'exam': exam, 'device_tag': request.device_id[:DEVICE_TAG],
         'payload': {
             'questions': payload_questions,
+            'low_seconds': min(300, (exam.duration_minutes or 0) * 6),  # the timer turns red in the last 10% (at most 5 minutes)
             'answers': {str(a.question_id): a.choice_id for a in attempt.answers.all()},
             'deadline_ms': _ms(attempt.ends_at) if attempt.ends_at else None,
             'now_ms': _ms(timezone.now()),
