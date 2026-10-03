@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .exam_control import EXTEND_ALL_MINUTES, EXTRA_MINUTES, extend_all, grant_extra, reset_device, unfreeze
+from .exam_device import log_event
 from .util import to_int
 from .exam_results import result_rows, result_summary, result_table
 from .exam_run import COUNTDOWN_SECONDS, end_exam, finalize_expired, start_exam
@@ -31,9 +32,19 @@ def teacher_required(view):
     return login_required(wrapper)
 
 
+def _exam_for(request, pk):
+    """An exam you may manage: your own, or (for the administrator only) any teacher's. Question banks stay private."""
+    if role_of(request.user) == 'admin':
+        return get_object_or_404(Exam, pk=pk)
+    return get_object_or_404(Exam, pk=pk, owner=request.user)
+
+
 @teacher_required
 def teach_home(request):
-    return render(request, 'quiz/teacher/home.html', {'exams': request.user.exams.order_by('-created_at')})
+    context = {'exams': request.user.exams.order_by('-created_at')}
+    if role_of(request.user) == 'admin':  # the administrator also sees every other teacher's exams
+        context['others'] = Exam.objects.exclude(owner=request.user).select_related('owner').order_by('-created_at')[:200]
+    return render(request, 'quiz/teacher/home.html', context)
 
 
 def _bank_context(user):
@@ -130,9 +141,11 @@ def exam_new(request):
 
 @teacher_required
 def exam_detail(request, pk):
-    exam = get_object_or_404(Exam, pk=pk, owner=request.user)  # only your own exams
+    exam = _exam_for(request, pk)
     if request.method == 'POST':
         action = request.POST.get('action')
+        if exam.owner_id != request.user.id:  # the administrator stepping in: always leave a trace in the activity log
+            log_event(exam, 'admin', f'Administrator action: {action}', actor=request.user)  # the page adds "(by name)"
         if action in ('seats', 'allow') and exam.phase() == Exam.ENDED:
             messages.error(request, 'This exam has ended, so the class list and seats are locked.')
         elif action == 'seats' and exam.allowed.exists():
@@ -274,14 +287,14 @@ def _controls_context(exam):
 
 @teacher_required
 def exam_controls(request, pk):
-    exam = get_object_or_404(Exam, pk=pk, owner=request.user)
+    exam = _exam_for(request, pk)
     return render(request, 'quiz/teacher/_exam_controls.html', _controls_context(exam))
 
 
 @teacher_required
 def exam_live(request, pk):
     """HTML fragment the exam page refreshes every few seconds."""
-    exam = get_object_or_404(Exam, pk=pk, owner=request.user)
+    exam = _exam_for(request, pk)
     return render(request, 'quiz/teacher/_exam_live.html', _live_context(exam))
 
 
@@ -304,7 +317,7 @@ def student_template(request):
 
 @teacher_required
 def exam_results(request, pk):
-    exam = get_object_or_404(Exam, pk=pk, owner=request.user)
+    exam = _exam_for(request, pk)
     rows = result_rows(exam)
     fmt = request.GET.get('format')
     if fmt in ('csv', 'xlsx'):
@@ -319,7 +332,7 @@ def exam_results(request, pk):
 @teacher_required
 def exam_result_detail(request, pk, attempt_pk):
     """One student's answers next to the correct ones, for the teacher to evaluate."""
-    exam = get_object_or_404(Exam, pk=pk, owner=request.user)
+    exam = _exam_for(request, pk)
     attempt = get_object_or_404(ExamAttempt, pk=attempt_pk, exam=exam)
     finalize_expired(exam)
     attempt.refresh_from_db()

@@ -776,6 +776,11 @@ nav a:hover {
     color: white;
 }
 
+.role-badge.pending {
+    background-color: #e0a800;
+    color: #212529;
+}
+
 .admin-link {
     color: #dc3545 !important;
     font-weight: 600;

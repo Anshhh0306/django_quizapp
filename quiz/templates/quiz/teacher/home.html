@@ -17,5 +17,20 @@
   {% else %}
     <p>No exams yet. Upload questions, then create your first exam.</p>
   {% endif %}
+
+  {% if others is not None %}
+  <h3>Other teachers' exams (administrator)</h3>
+  <p class="help-text">You can open any of these, watch it live, see results and step in if needed. Whatever you do is written to that exam's activity log with your name.</p>
+  {% if others %}
+    <ul>
+    {% for e in others %}
+      <li><a href="{% url 'exam_detail' e.pk %}">{{ e.title }}</a> &mdash; {{ e.owner.username }}, {{ e.get_mode_display }}, {{ e.status }}</li>
+    {% endfor %}
+    </ul>
+    {% if others|length >= 200 %}<p><small>Showing the newest 200.</small></p>{% endif %}
+  {% else %}
+    <p>No other teacher has created an exam yet.</p>
+  {% endif %}
+  {% endif %}
 </div>
 {% endblock %}

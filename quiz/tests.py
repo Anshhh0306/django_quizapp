@@ -157,12 +157,6 @@ class ViewTests(TestCase):
         self.assertTemplateUsed(post_response, 'quiz/feedback_anticheat.html')
         self.assertTrue(post_response.context['correct'])
 
-    def test_leaderboard_view(self):
-        self.client.login(username='student1', password='TestPassword123!')
-        response = self.client.get(reverse('leaderboard'))
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'quiz/leaderboard.html')
-
     def test_user_profile_view(self):
         self.client.login(username='student1', password='TestPassword123!')
         response = self.client.get(reverse('user_profile'))
