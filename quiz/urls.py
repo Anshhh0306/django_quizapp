@@ -22,7 +22,6 @@ urlpatterns = [
     path('start/<int:category_id>/', views.start_quiz, name='start_quiz'),
     path('results/<int:category_id>/', views.view_results, name='view_results'),
     path('review/<int:category_id>/', views.quiz_review, name='quiz_review'),
-    path('leaderboard/', views.leaderboard, name='leaderboard'),
     path('profile/', views.user_profile, name='user_profile'),
     path('question/', views.question_view, name='question'),
     path('result/', views.result, name='result'),

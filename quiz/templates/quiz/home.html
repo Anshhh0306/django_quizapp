@@ -33,7 +33,8 @@
     {% elif role == 'admin' %}
     <div class="dashboard">
       <h2>Administrator</h2>
-      <p>Manage users and teacher approvals in the <a href="/admin/">admin site</a>.</p>
+      <p>Manage users and teacher approvals in the <a href="/admin/">admin site</a>. You can also open any teacher's exam, and what you do there is recorded.</p>
+      <a href="{% url 'teach_home' %}" class="btn btn-create">Open teacher tools</a>
     </div>
     {% else %}
     <div class="dashboard">

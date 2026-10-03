@@ -13,10 +13,12 @@
       {% if user.is_authenticated %}
         <div class="user-welcome-inline">
           <span class="welcome-text">Welcome, {{ user.username }}!</span>
-          {% if user.is_superuser %}
+          {% if role == 'admin' %}
             <span class="role-badge admin">Superuser</span>
-          {% elif user.is_staff %}
-            <span class="role-badge staff">Staff</span>
+          {% elif role == 'teacher' %}
+            <span class="role-badge staff">Teacher</span>
+          {% elif role == 'pending' %}
+            <span class="role-badge pending">Awaiting approval</span>
           {% endif %}
         </div>
         <div class="user-actions-inline">
@@ -34,7 +36,6 @@
     <div class="nav-right">
       {% if user.is_authenticated %}
         <a href="{% url 'home' %}">Home</a>
-        <a href="{% url 'leaderboard' %}">Leaderboard</a>
       {% else %}
         <a href="{% url 'login' %}">Login</a>
         <a href="{% url 'register' %}">Register</a>

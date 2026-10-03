@@ -4,6 +4,9 @@
   <h2>{{ exam.title }}</h2>
   <p><a href="{% url 'teach_home' %}">Back</a> | <a href="{% url 'exam_results' exam.pk %}" class="btn btn-view">View results</a></p>
   {% if messages %}{% for m in messages %}<div>{{ m }}</div>{% endfor %}{% endif %}
+  {% if exam.owner_id != user.id %}
+  <p style="background:#fff3cd;padding:8px;"><strong>This exam belongs to {{ exam.owner.username }}.</strong> You are acting as administrator; what you do here is recorded in the activity log.</p>
+  {% endif %}
 
   <p><strong>Exam link (share with students):</strong><br><code id="exam-link">{{ link }}</code>
     <button type="button" class="btn btn-view" id="copy-link">Copy link</button></p>

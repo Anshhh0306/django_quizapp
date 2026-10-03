@@ -144,7 +144,6 @@ class Command(BaseCommand):
         
         self.stdout.write(self.style.SUCCESS('\n🎉 Successfully created 20 users with random quiz data!'))
         self.stdout.write(self.style.SUCCESS('Now you can test:'))
-        self.stdout.write('  • Leaderboard with real competition')
         self.stdout.write('  • Admin panel user management')
         self.stdout.write('  • Tied scores dropdown functionality')
         self.stdout.write('  • User profiles with varied performance')
