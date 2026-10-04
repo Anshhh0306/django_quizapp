@@ -1,10 +1,37 @@
+from urllib.parse import urlencode
+
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.contrib import messages
-from django.urls import resolve
+from django.urls import resolve, reverse
 
+from . import two_factor
 from .ratelimit import bump
+
+
+class TwoFactorGateMiddleware:
+    """Whoever is signed in but has not passed the second step can reach only the two-factor pages, logout and static
+    files: everything else, the exam endpoints and the admin site included, sends them to the code page (or, for a role
+    that must have an authenticator and has none, to the setup page). Deny by default, so a page added later is covered
+    too. Also where a browser the account has not used before is noticed (two_factor.note_browser)."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = request.user
+        signed_in = user.is_authenticated
+        fully = signed_in and user.is_verified()
+        if signed_in and not fully and not request.path.startswith(two_factor.EXEMPT_PREFIXES):
+            step = two_factor.pending_step(request)
+            if step:
+                return redirect(f'{reverse("two_factor_" + step)}?{urlencode({"next": request.get_full_path()})}')
+            fully = True  # nothing more is asked of this person
+        response = self.get_response(request)
+        if fully:
+            two_factor.note_browser(request, response)
+        return response
 
 
 class RequestCapMiddleware:

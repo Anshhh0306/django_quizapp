@@ -64,8 +64,15 @@ LOGIN_IP_LIMIT = 300            # wrong passwords from one address overall in LO
 LOGIN_IP_WINDOW = 15 * 60       # high on purpose: a whole campus can share one address
 
 
+LOCKED_LIST = 'lf:locked'  # name -> when its lock ends: only so a superadmin can SEE the locks (the lock itself is lf:lock:)
+
+
+def _name(username):
+    return (username or '').lower()[:150]
+
+
 def _login_keys(username, ip):
-    name = (username or '').lower()[:150]
+    name = _name(username)
     return f'lf:acct:{name}', f'lf:lock:{name}', f'lf:ip:{ip}'
 
 
@@ -87,9 +94,23 @@ def login_failed(username, ip):
     if n >= LOGIN_FREE_TRIES:
         seconds = min(LOGIN_LOCK_MAX, LOGIN_LOCK_FIRST * 2 ** (n - LOGIN_FREE_TRIES))
         cache.set(lock, time.time() + seconds, seconds)
+        cache.set(LOCKED_LIST, {**cache.get(LOCKED_LIST, {}), _name(username): time.time() + seconds}, 24 * 3600)
     return seconds
 
 
 def login_succeeded(username, ip):
+    """Forgive the account's wrong passwords and end its lock: after a correct login, a password reset by email (only the
+    inbox owner can do that) or a superadmin's Unlock button."""
     acct, lock, _ = _login_keys(username, ip)
-    cache.delete_many([acct, lock])  # a correct password forgives the account's earlier wrong ones
+    cache.delete_many([acct, lock])
+    listed = cache.get(LOCKED_LIST, {})
+    if listed.pop(_name(username), None) is not None:
+        cache.set(LOCKED_LIST, listed, 24 * 3600)
+
+
+def locked_accounts():
+    """[(name, seconds left)] for the accounts locked right now, longest first. Only what this server process knows:
+    # ponytail: the cache is per process; a shared cache (needed anyway for several workers) makes this complete."""
+    now = time.time()
+    return sorted(((name, math.ceil(until - now)) for name, until in cache.get(LOCKED_LIST, {}).items() if until > now),
+                  key=lambda item: -item[1])

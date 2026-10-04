@@ -5,7 +5,8 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import Question, Choice, UserQuiz, Category, UserAnswer
 from .forms import RegisterForm, pending_account
-from .ratelimit import rate_limit
+from .ratelimit import login_succeeded, rate_limit
+from .two_factor import mark_browser_known
 from .exam_results import my_exam_cards
 from .roles import is_student, role_of
 from .util import to_int
@@ -110,7 +111,9 @@ def verify_email(request, uidb64, token):
     if request.method == 'POST' and form.is_valid():
         user.is_active = True
         form.save()  # sets the password and saves the account
-        return render(request, 'quiz/verification_success.html', {'pending_teacher': not is_student(user)})
+        response = render(request, 'quiz/verification_success.html', {'pending_teacher': not is_student(user)})
+        mark_browser_known(response, user)  # the browser where the password was chosen is not a "new browser" later
+        return response
     return render(request, 'quiz/verification_set_password.html', {'form': form})
 
 @rate_limit('resend', 1000, 3600, field='email', field_limit=5)
@@ -523,6 +526,7 @@ def custom_password_reset_confirm(request, uidb64, token):
             form = SetPasswordForm(user, request.POST)
             if form.is_valid():
                 form.save()
+                login_succeeded(user.username, None)  # the inbox owner proved themselves: any login lock ends
                 return redirect('password_reset_complete')
         else:
             from django.contrib.auth.forms import SetPasswordForm

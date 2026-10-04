@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="auth-form-container">
+    <h2>Enter your code</h2>
+    <p>Open your authenticator app and type the 6-digit code shown for <strong>SRMIST Quiz</strong>.
+       Lost your phone? Type one of your recovery codes instead.</p>
+
+    <form method="post" class="simple-form">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+      <div class="form-field">
+        <label for="code">Code</label>
+        <input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" autofocus required>
+      </div>
+      <p style="font-size:.9rem;">
+        <label><input type="checkbox" name="remember"> Remember this browser for {{ days }} days
+          (only on your own device: your password is still needed)</label>
+      </p>
+      <button type="submit" class="btn btn-create">Verify</button>
+    </form>
+
+    <form action="{% url 'logout' %}" method="post" style="margin-top:14px;">
+      {% csrf_token %}
+      <button type="submit" class="logout-btn">Not you? Log out</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

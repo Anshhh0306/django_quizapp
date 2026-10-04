@@ -1,10 +1,17 @@
 from django.urls import path
-from . import views, teacher_views, exam_views, exam_take
+from . import views, teacher_views, exam_views, exam_take, lock_views, two_factor
 from .forms import LoginForm
 from django.contrib.auth import views as auth_views
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('locks/', lock_views.locks, name='login_locks'),
+    path('locks/unlock/', lock_views.unlock, name='login_unlock'),
+    path('2fa/', two_factor.manage, name='two_factor'),
+    path('2fa/verify/', two_factor.verify, name='two_factor_verify'),
+    path('2fa/setup/', two_factor.setup, name='two_factor_setup'),
+    path('2fa/codes/', two_factor.new_codes, name='two_factor_codes'),
+    path('2fa/off/', two_factor.turn_off, name='two_factor_off'),
     path('register/', views.register, name='register'),
     path('verify/<str:uidb64>/<str:token>/', views.verify_email, name='verify_email'),
     path('resend-verification/', views.resend_verification, name='resend_verification'),
