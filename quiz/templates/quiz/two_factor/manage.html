@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="auth-form-container">
+    <h2>Account security</h2>
+    {% if enabled %}
+      <p><strong>Two-factor sign-in is on.</strong> Recovery codes left: <strong>{{ codes_left }}</strong>.
+         {% if codes_left < 3 %}<span style="color:#b03a2e;">Make a new set soon.</span>{% endif %}</p>
+
+      <form method="post" action="{% url 'two_factor_codes' %}" class="simple-form"
+            onsubmit="return confirm('Make a new set of recovery codes? The old ones stop working.');">
+        {% csrf_token %}
+        <button type="submit" class="btn">Make new recovery codes</button>
+      </form>
+
+      {% if required %}
+        <p style="margin-top:18px;font-size:.9rem;">Your role requires two-factor sign-in, so it cannot be turned off.
+           If you lose your phone and your recovery codes, ask the administrator to reset it.</p>
+      {% else %}
+        <h3 style="margin-top:22px;">Turn it off</h3>
+        {% if error == 'password' %}<div class="error" role="alert">That password was not right.</div>{% endif %}
+        <form method="post" action="{% url 'two_factor_off' %}" class="simple-form"
+              onsubmit="return confirm('Turn two-factor sign-in off?');">
+          {% csrf_token %}
+          <div class="form-field">
+            <label for="password">Your password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn">Turn off</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <p>Two-factor sign-in is <strong>off</strong>. Turn it on so nobody can use your account even if they learn your password.</p>
+      <a href="{% url 'two_factor_setup' %}" class="btn btn-create">Turn on</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

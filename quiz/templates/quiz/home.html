@@ -35,8 +35,16 @@
       <h2>Administrator</h2>
       <p>Manage users and teacher approvals in the <a href="/admin/">admin site</a>. You can also open any teacher's exam, and what you do there is recorded.</p>
       <a href="{% url 'teach_home' %}" class="btn btn-create">Open teacher tools</a>
+      <a href="{% url 'login_locks' %}" class="btn">Locked logins</a>
     </div>
     {% else %}
+    {% if not two_factor_on %}
+    <p style="background:#e8f1ff;border:1px solid #9bbcf0;padding:10px;border-radius:6px;font-size:.92rem;">
+      <strong>Secure your account.</strong> Turn on two-factor sign-in (about two minutes) so nobody can use your account
+      during an exam, even if they learn your password.
+      <a href="{% url 'two_factor_setup' %}">Turn it on</a>
+    </p>
+    {% endif %}
     <div class="dashboard">
       {% if my_exams %}
       <h2>My exams</h2>

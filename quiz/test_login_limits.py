@@ -6,11 +6,14 @@ import threading
 import time
 from unittest import mock
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
+from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
 from django.core.cache import cache
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 
 from quiz.models import ExamAttempt
 from quiz.ratelimit import LOGIN_FREE_TRIES, LOGIN_LOCK_FIRST, LOGIN_MEMORY
@@ -273,3 +276,91 @@ class RequestCapTests(AccountTestCase):
     @override_settings(REQUEST_CAPS={})
     def test_empty_caps_mean_off(self):
         self.assertEqual({self.get().status_code for _ in range(30)}, {200})
+
+
+class LockedLoginsTests(AccountTestCase):
+    """A password reset by email ends the lock; the superadmin can see locked accounts and unlock them."""
+
+    def setUp(self):
+        super().setUp()
+        self.finish_registration('ab1000@srmist.edu.in')
+        self.student = User.objects.get(username='ab1000')
+        self.teacher = User.objects.create_user('shantini', 'shantini@srmist.edu.in', PASSWORD)
+        self.teacher.groups.add(Group.objects.get(name='Teachers'))
+        self.root = User.objects.create_superuser('root', 'root@srmist.edu.in', PASSWORD)
+        self.client = Client()
+
+    def lock(self, name='ab1000'):
+        for _ in range(LOGIN_FREE_TRIES):
+            self.client.post(reverse('login'), {'username': name, 'password': 'wrong-password'})
+
+    def try_login(self, password=PASSWORD, name='ab1000'):
+        return Client().post(reverse('login'), {'username': name, 'password': password})
+
+    def page(self, user):
+        c = Client()
+        c.login(username=user.username, password=PASSWORD)
+        return c
+
+    # ---- a reset by email ends the lock ----
+    def reset_link(self):
+        return reverse('password_reset_confirm', args=[urlsafe_base64_encode(force_bytes(self.student.pk)),
+                                                      default_token_generator.make_token(self.student)])
+
+    def test_a_password_reset_by_email_ends_the_lock(self):
+        self.lock()
+        self.assertContains(self.try_login(), 'Too many failed login attempts')
+        self.client.post(self.reset_link(), {'new_password1': 'BrandNewPass!987', 'new_password2': 'BrandNewPass!987'})
+        self.assertEqual(self.try_login('BrandNewPass!987').status_code, 302)  # straight in, no waiting
+
+    def test_a_wrong_or_missing_link_does_not(self):
+        self.lock()
+        self.client.post(reverse('password_reset_confirm', args=[urlsafe_base64_encode(force_bytes(self.student.pk)), 'bad-token']),
+                         {'new_password1': 'BrandNewPass!987', 'new_password2': 'BrandNewPass!987'})
+        self.assertContains(self.try_login('BrandNewPass!987'), 'Too many failed login attempts')
+
+    # ---- the superadmin's list ----
+    def test_the_superadmin_sees_who_is_locked_and_for_how_long(self):
+        self.lock()
+        self.lock('nobody')
+        r = self.page(self.root).get(reverse('login_locks'))
+        for text in ('ab1000', 'student', 'ab1000@srmist.edu.in', 'nobody', 'no such account'):
+            self.assertContains(r, text)
+        seconds = [row['seconds'] for row in r.context['rows']]
+        self.assertTrue(all(0 < s <= LOGIN_LOCK_FIRST for s in seconds), seconds)
+
+    def test_an_empty_list_says_so(self):
+        self.assertContains(self.page(self.root).get(reverse('login_locks')), 'No account is locked right now')
+
+    def test_nobody_else_can_see_the_list_or_unlock(self):
+        self.lock()
+        for user in (self.student, self.teacher):
+            c = self.page(user)
+            self.assertRedirects(c.get(reverse('login_locks')), reverse('home'), fetch_redirect_response=False)
+            c.post(reverse('login_unlock'), {'name': 'ab1000'})
+        self.assertIn('/accounts/login/', Client().get(reverse('login_locks'))['Location'])
+        self.assertContains(self.try_login(), 'Too many failed login attempts')  # still locked
+
+    def test_unlock_ends_the_lock_and_removes_it_from_the_list(self):
+        self.lock()
+        admin = self.page(self.root)
+        r = admin.post(reverse('login_unlock'), {'name': 'AB1000'}, follow=True)  # any letter case
+        self.assertNotContains(r, '>Unlock<')
+        self.assertEqual(self.try_login().status_code, 302)
+
+    def test_unlocking_needs_a_post(self):
+        self.assertEqual(self.page(self.root).get(reverse('login_unlock')).status_code, 405)
+
+    def test_an_ended_lock_leaves_the_list(self):
+        self.lock()
+        with later(LOGIN_LOCK_FIRST + 5):
+            self.assertContains(self.page(self.root).get(reverse('login_locks')), 'No account is locked right now')
+
+    def test_a_correct_login_after_the_lock_takes_it_off_the_list(self):
+        self.lock()
+        with later(LOGIN_LOCK_FIRST + 1):
+            self.assertEqual(self.try_login().status_code, 302)
+        self.assertContains(self.page(self.root).get(reverse('login_locks')), 'No account is locked right now')
+
+    def test_the_home_page_links_the_superadmin_to_it(self):
+        self.assertContains(self.page(self.root).get('/'), reverse('login_locks'))

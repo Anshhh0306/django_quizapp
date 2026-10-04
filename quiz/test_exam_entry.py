@@ -146,7 +146,7 @@ class LobbyTests(ExamEntryBase):
 
     def test_status_poll_is_cheap(self):
         self.enter(self.students[0])
-        with self.assertNumQueries(4):  # session, user, exam, attempt
+        with self.assertNumQueries(5):  # session, user, "has an authenticator?" (the 2FA gate), exam, attempt
             self.client.get(reverse('exam_status', args=[self.exam.token]))
 
 

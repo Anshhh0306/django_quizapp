@@ -21,6 +21,15 @@ def _send(subject, body, to):
         pass
 
 
+def mail_later(subject, body, to):
+    """Send from a background thread (a page must not wait for the mail server), or straight away under test.
+    The thread only sends; it never touches the database."""
+    if settings.LOCK_ALERT_BACKGROUND:
+        threading.Thread(target=_send, args=(subject, body, to), daemon=True).start()
+    else:
+        _send(subject, body, to)
+
+
 def alert_owner(request, username, seconds):
     """Email the owner when the lock starts. Silent for a name that is not an active account, and sent in a
     background thread: waiting for the mail server would make the 5th wrong password slower for real accounts than for
@@ -35,8 +44,4 @@ def alert_owner(request, username, seconds):
         'user': user, 'tries': LOGIN_FREE_TRIES, 'minutes': seconds // 60, 'when': timezone.localtime(),
         'reset_url': request.build_absolute_uri(reverse('password_reset')),
     })
-    args = ('Wrong password attempts on your SRMIST Quiz account', body, user.email)
-    if settings.LOCK_ALERT_BACKGROUND:
-        threading.Thread(target=_send, args=args, daemon=True).start()
-    else:
-        _send(*args)
+    mail_later('Wrong password attempts on your SRMIST Quiz account', body, user.email)

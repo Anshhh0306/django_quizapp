@@ -76,6 +76,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_otp',                       # two-factor sign-in: codes from an authenticator app...
+    'django_otp.plugins.otp_totp',
+    'django_otp.plugins.otp_static',    # ...and recovery codes
     'quiz',
 ]
 
@@ -85,7 +88,9 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django_otp.middleware.OTPMiddleware',  # request.user.is_verified(): has this session passed the second step?
     'quiz.middleware.RequestCapMiddleware',  # catch-all cap per address and per signed-in user (REQUEST_CAPS)
+    'quiz.middleware.TwoFactorGateMiddleware',  # a signed-in but unverified user can only reach the 2FA pages
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'quiz.middleware.AdminAccessMiddleware',  # Custom middleware to protect admin interface
@@ -210,6 +215,9 @@ else:
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
+# Give up on the mail server after this many seconds. Without it a blocked mail port (campus Wi-Fi, a host that blocks
+# SMTP) leaves every register / reset request hanging until the operating system gives up, and a few of them freeze the site.
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 10))
 
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', f'SRM Quiz Platform <{EMAIL_HOST_USER}>')
 # Tests create many users; a fast hasher makes the suite several times quicker. Only active under "manage.py test".
@@ -222,6 +230,17 @@ if "test" in __import__("sys").argv:
 REQUEST_CAPS = {'address': 1200, 'user': 300}
 # The "someone is guessing your password" email is sent from a background thread (so the login page is not slowed down).
 LOCK_ALERT_BACKGROUND = True
+# Two-factor sign-in (see quiz/two_factor.py). These roles cannot use the site without it; anyone else may turn it on.
+TWO_FACTOR_REQUIRED_ROLES = {'admin', 'teacher'}
+TRUSTED_BROWSER_DAYS = 30        # "remember this browser" skips the code for this long (password still needed)
+OTP_TOTP_ISSUER = 'SRMIST Quiz'  # the name the authenticator app shows
+OTP_TOTP_THROTTLE_FACTOR = 2     # after a wrong code: wait 2, 4, 8, 16 ... seconds before the next try
+OTP_STATIC_THROTTLE_FACTOR = 2
+OTP_ADMIN_HIDE_SENSITIVE_DATA = True  # the admin site must not show anyone's secret key or recovery codes
+# A browser an account has not used before gets one email ("new sign-in from Firefox on Windows").
+NEW_BROWSER_ALERTS = True
 if "test" in __import__("sys").argv:
     REQUEST_CAPS = {}
     LOCK_ALERT_BACKGROUND = False  # a thread would put the mail in a later test's outbox
+    TWO_FACTOR_REQUIRED_ROLES = set()  # the older tests sign teachers in without a code; the 2FA tests turn this on
+    NEW_BROWSER_ALERTS = False

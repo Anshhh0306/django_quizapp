@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="dashboard">
+    <h2>Locked logins</h2>
+    <p>An account is locked for a few minutes after repeated wrong passwords (2, 4, 8, then 15 minutes). The owner is
+       emailed when it starts. If a teacher is being kept out on purpose, unlock them here.
+       <small>This list only shows what this server process knows about.</small></p>
+    {% if rows %}
+    <table style="width:100%;border-collapse:collapse;">
+      <tr style="text-align:left;"><th>Account</th><th>Role</th><th>Email</th><th>Time left</th><th></th></tr>
+      {% for r in rows %}
+      <tr style="border-top:1px solid #ddd;">
+        <td>{{ r.name }}</td><td>{{ r.role }}</td><td>{{ r.email|default:"-" }}</td>
+        <td>{{ r.seconds }} s</td>
+        <td>
+          <form method="post" action="{% url 'login_unlock' %}" style="margin:0;">
+            {% csrf_token %}
+            <input type="hidden" name="name" value="{{ r.name }}">
+            <button type="submit" class="btn">Unlock</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+      <p><em>No account is locked right now.</em></p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
