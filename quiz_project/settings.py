@@ -85,6 +85,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'quiz.middleware.RequestCapMiddleware',  # catch-all cap per address and per signed-in user (REQUEST_CAPS)
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'quiz.middleware.AdminAccessMiddleware',  # Custom middleware to protect admin interface
@@ -128,6 +129,11 @@ DATABASES = {
         },
     }
 }
+
+# Login locks and rate-limit counters live in this cache. Django's default keeps only 300 entries and silently
+# drops the oldest when full, which would drop a lock; this keeps plenty. ponytail: per process, so with several
+# workers (gunicorn) or a restart the counters are not shared: use a database or Redis cache then.
+CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'OPTIONS': {'MAX_ENTRIES': 50_000}}}
 
 
 # Password validation
@@ -209,3 +215,13 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', f'SRM Quiz Platform <{
 # Tests create many users; a fast hasher makes the suite several times quicker. Only active under "manage.py test".
 if "test" in __import__("sys").argv:
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# Requests per minute: one network address (a whole campus can share one, so it is high) and one signed-in user (a
+# student in an exam makes about 10 a minute). Switched off under "manage.py test": the whole suite comes from one
+# address in about a minute. The tests that need it turn it on with small numbers.
+REQUEST_CAPS = {'address': 1200, 'user': 300}
+# The "someone is guessing your password" email is sent from a background thread (so the login page is not slowed down).
+LOCK_ALERT_BACKGROUND = True
+if "test" in __import__("sys").argv:
+    REQUEST_CAPS = {}
+    LOCK_ALERT_BACKGROUND = False  # a thread would put the mail in a later test's outbox

@@ -232,6 +232,7 @@
       let j = null;
       try { j = await r.json(); } catch (e) {}
       if (r.status === 409) { finish(); return; }
+      if (r.status === 429) { pendingEvents.push([kind, away]); return; }  // asked to slow down: neither a leave nor "I am back" may be lost
       if (r.status === 403 && j && j.reason === 'blocked') { setBlocked(); return; }
       if (j && j.ok) {
         if (j.closed) { finish(); return; }  // the third strike: the server has submitted the exam

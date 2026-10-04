@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -13,7 +14,8 @@ from django.db import IntegrityError
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from quiz.ratelimit import LOGIN_IP_LIMIT, LOGIN_PAIR_LIMIT
+from quiz.ratelimit import (LOGIN_FREE_TRIES, LOGIN_IP_LIMIT, LOGIN_LOCK_FIRST, LOGIN_MEMORY,
+                            login_blocked, login_failed)
 
 PASSWORD = 'StrongPass!4721'
 LINK = re.compile(r'http://testserver(/verify/\S+)')
@@ -162,9 +164,11 @@ class DeactivatedAccountsStayDeactivatedTests(AccountTestCase):
 
     def test_registering_again_does_not_revive_it(self):
         self.deactivated_student()
+        before = len(mail.outbox)
         r = self.register()
-        self.assertContains(r, 'already registered')
+        self.assertTemplateUsed(r, 'quiz/verification_sent.html')  # the same page as for any address
         self.assertFalse(User.objects.get(username='qq5555').is_active)
+        self.assertNotIn('/verify/', mail.outbox[before].body)  # the owner is told, no link that could switch it on
 
     def test_password_reset_does_not_revive_it_either(self):
         user = self.deactivated_student()
@@ -174,11 +178,11 @@ class DeactivatedAccountsStayDeactivatedTests(AccountTestCase):
 
 
 class RegistrationRobustnessTests(AccountTestCase):
-    def test_two_simultaneous_registrations_give_a_message_not_a_crash(self):
+    def test_two_simultaneous_registrations_give_a_page_not_a_crash(self):
         with mock.patch('quiz.forms.RegisterForm.save', side_effect=IntegrityError):
             r = self.register()
-        self.assertEqual(r.status_code, 200)
-        self.assertContains(r, 'already registered')
+        self.assertTemplateUsed(r, 'quiz/verification_sent.html')  # the loser is treated like any registered address
+        self.assertIn('already has an account', mail.outbox[-1].body)
 
     def test_a_broken_mail_server_gives_a_message_not_a_crash(self):
         with mock.patch('quiz.views.send_mail', side_effect=OSError('smtp down')):
@@ -190,7 +194,7 @@ class RegistrationRobustnessTests(AccountTestCase):
         self.register()
         with mock.patch('quiz.views.send_mail', side_effect=OSError('smtp down')):
             r = self.client.post(reverse('resend_verification'), {'email': 'qq5555@srmist.edu.in'})
-        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.status_code, 200)
 
     def test_one_inbox_cannot_be_flooded_but_a_class_can_register(self):
         for _ in range(3):
@@ -209,22 +213,74 @@ class LoginLockoutTests(AccountTestCase):
     def attempt(self, name='ab1000', password='wrong-password', ip='10.0.0.1'):
         return self.client.post(reverse('login'), {'username': name, 'password': password}, REMOTE_ADDR=ip)
 
-    def test_repeated_wrong_passwords_lock_that_account_from_that_address(self):
-        for _ in range(LOGIN_PAIR_LIMIT):
+    @staticmethod
+    def later(seconds):
+        """Let `seconds` pass for the lock and for the cache that holds it."""
+        real = time.time
+        return mock.patch('time.time', lambda: real() + seconds)
+
+    def test_repeated_wrong_passwords_lock_the_account_for_two_minutes(self):
+        for _ in range(LOGIN_FREE_TRIES):
             self.assertContains(self.attempt(), 'correct username and password')
         r = self.attempt(password=PASSWORD)  # even the right password is refused during the lock
         self.assertContains(r, 'Too many failed login attempts')
+        self.assertContains(r, 'wait 2 minutes')
         self.assertNotIn('_auth_user_id', self.client.session)
 
-    def test_the_lock_is_per_address_so_a_stranger_cannot_lock_the_real_student_out(self):
-        for _ in range(LOGIN_PAIR_LIMIT + 3):
-            self.attempt(ip='10.9.9.9')  # someone else guessing
-        r = self.attempt(password=PASSWORD, ip='10.0.0.1')  # the student, from their own address
-        self.assertEqual(r.status_code, 302)
+    def test_the_lock_follows_the_account_so_guessing_from_many_addresses_does_not_help(self):
+        for i in range(LOGIN_FREE_TRIES):
+            self.attempt(ip=f'10.9.9.{i}')
+        self.assertContains(self.attempt(password=PASSWORD, ip='10.0.0.1'), 'Too many failed login attempts')
 
-    def test_other_accounts_from_the_same_address_are_not_affected(self):
+    def test_the_lock_is_short_so_a_stranger_cannot_keep_the_student_out(self):
+        for _ in range(LOGIN_FREE_TRIES):
+            self.attempt(ip='10.9.9.9')
+        with self.later(LOGIN_LOCK_FIRST + 1):
+            self.assertEqual(self.attempt(password=PASSWORD).status_code, 302)
+
+    def test_each_further_wrong_password_doubles_the_lock_up_to_fifteen_minutes(self):
+        waits = []
+        for _ in range(LOGIN_FREE_TRIES + 4):
+            login_failed('ab1000', '10.0.0.1')
+            waits.append(login_blocked('ab1000', '10.0.0.1'))
+        self.assertEqual(waits[:LOGIN_FREE_TRIES - 1], [0] * (LOGIN_FREE_TRIES - 1))  # the free tries
+        self.assertEqual(waits[LOGIN_FREE_TRIES - 1:], [120, 240, 480, 900, 900])
+
+    def test_the_message_rounds_the_wait_up_and_never_says_zero_minutes(self):
+        for _ in range(LOGIN_FREE_TRIES):
+            self.attempt()
+        with self.later(LOGIN_LOCK_FIRST - 30):  # 30 seconds of the lock are left
+            self.assertContains(self.attempt(password=PASSWORD), 'wait 1 minute and')
+
+    @staticmethod
+    def box(response, name):
+        return re.search(rf'<input[^>]*name="{name}"[^>]*>', response.content.decode()).group(0)
+
+    def test_while_locked_the_password_box_is_greyed_out_with_a_countdown(self):
+        for _ in range(LOGIN_FREE_TRIES):
+            self.attempt()
+        r = self.attempt(password=PASSWORD)
+        self.assertRegex(self.box(r, 'password'), r'\bdisabled\b')
+        self.assertNotRegex(self.box(r, 'username'), r'\bdisabled\b')  # they can still switch to another account
+        self.assertRegex(r.content.decode(), r'<button[^>]*id="login-button"[^>]*\bdisabled\b')
+        locked_for = r.context['form'].locked_for
+        self.assertTrue(0 < locked_for <= LOGIN_LOCK_FIRST)
+        self.assertContains(r, f'const lockSeconds = {locked_for};')
+        self.assertContains(r, 'id="lock-left"')
+
+    def test_the_password_box_is_normal_before_the_lock_and_on_a_fresh_page(self):
+        r = self.attempt()  # one wrong password: nothing is locked
+        self.assertNotRegex(self.box(r, 'password'), r'\bdisabled\b')
+        self.assertNotContains(r, 'lock-left')
+        for _ in range(LOGIN_FREE_TRIES):
+            self.attempt()
+        fresh = self.client.get(reverse('login'))  # opening the page again does not show anyone's lock
+        self.assertNotRegex(self.box(fresh, 'password'), r'\bdisabled\b')
+        self.assertNotRegex(fresh.content.decode(), r'<button[^>]*id="login-button"[^>]*\bdisabled\b')
+
+    def test_other_accounts_are_not_affected(self):
         self.finish_registration('ab1001@srmist.edu.in')
-        for _ in range(LOGIN_PAIR_LIMIT + 1):
+        for _ in range(LOGIN_FREE_TRIES + 1):
             self.attempt('ab1000')
         self.assertEqual(self.attempt('ab1001', PASSWORD).status_code, 302)
 
@@ -234,42 +290,46 @@ class LoginLockoutTests(AccountTestCase):
         self.assertContains(self.attempt('ab1000', PASSWORD), 'Too many failed login attempts')
 
     def test_a_correct_login_clears_the_strikes(self):
-        for _ in range(LOGIN_PAIR_LIMIT - 1):
+        for _ in range(LOGIN_FREE_TRIES - 1):
             self.attempt()
         self.assertEqual(self.attempt(password=PASSWORD).status_code, 302)
         self.client.post(reverse('logout'))
-        for _ in range(LOGIN_PAIR_LIMIT - 1):  # a fresh set of strikes is allowed again
+        for _ in range(LOGIN_FREE_TRIES - 1):  # a fresh set of strikes is allowed again
             self.attempt()
         self.assertEqual(self.attempt(password=PASSWORD).status_code, 302)
 
+    def test_wrong_passwords_are_forgotten_after_an_hour(self):
+        for _ in range(LOGIN_FREE_TRIES - 1):
+            self.attempt()
+        with self.later(LOGIN_MEMORY + 1):
+            for _ in range(LOGIN_FREE_TRIES - 1):  # would be locked if the first four still counted
+                self.attempt()
+            self.assertEqual(self.attempt(password=PASSWORD).status_code, 302)
+
     def test_correct_passwords_are_never_counted_so_a_class_is_never_slowed_down(self):
-        for _ in range(LOGIN_IP_LIMIT + 20):
+        for _ in range(LOGIN_FREE_TRIES * 4):
             c = Client()
             r = c.post(reverse('login'), {'username': 'ab1000', 'password': PASSWORD}, REMOTE_ADDR='10.0.0.1')
             self.assertEqual(r.status_code, 302)
 
     def test_a_spray_from_one_address_across_many_accounts_is_stopped(self):
-        for i in range(LOGIN_IP_LIMIT):
-            self.attempt(f'nobody{i}', ip='10.5.5.5')
-        self.assertContains(self.attempt('ab1000', PASSWORD, ip='10.5.5.5'), 'Too many failed login attempts')
-        self.assertEqual(self.attempt('ab1000', PASSWORD, ip='10.0.0.1').status_code, 302)  # everyone else is fine
+        with mock.patch('quiz.ratelimit.LOGIN_IP_LIMIT', 10):  # the real figure (300) only makes the test slow
+            for i in range(10):
+                self.attempt(f'nobody{i}', ip='10.5.5.5')
+            self.assertContains(self.attempt('ab1000', PASSWORD, ip='10.5.5.5'), 'Too many failed login attempts')
+            self.assertEqual(self.attempt('ab1000', PASSWORD, ip='10.0.0.1').status_code, 302)  # everyone else is fine
 
-    def test_the_lock_ends_when_the_window_does(self):
-        for _ in range(LOGIN_PAIR_LIMIT):
-            self.attempt()
-        cache.clear()  # the 15 minutes pass
-        self.assertEqual(self.attempt(password=PASSWORD).status_code, 302)
+    def test_a_whole_campus_behind_one_address_can_still_make_mistakes(self):
+        self.assertGreaterEqual(LOGIN_IP_LIMIT, 300)
 
     def test_the_admin_login_page_is_locked_the_same_way(self):
         User.objects.create_superuser('root', 'root@srmist.edu.in', PASSWORD)
-        post = lambda pw: self.client.post(reverse('admin:login'), {
-            'username': 'root', 'password': pw, 'this_is_the_login_form': 1, 'next': '/admin/'}, REMOTE_ADDR='10.7.7.7')
-        for _ in range(LOGIN_PAIR_LIMIT):
+        post = lambda pw, ip='10.7.7.7': self.client.post(reverse('admin:login'), {
+            'username': 'root', 'password': pw, 'this_is_the_login_form': 1, 'next': '/admin/'}, REMOTE_ADDR=ip)
+        for _ in range(LOGIN_FREE_TRIES):
             post('wrong')
         self.assertContains(post(PASSWORD), 'Too many failed login attempts')
-        self.assertEqual(self.client.post(reverse('admin:login'), {
-            'username': 'root', 'password': PASSWORD, 'this_is_the_login_form': 1, 'next': '/admin/'},
-            REMOTE_ADDR='10.8.8.8').status_code, 302)
+        self.assertContains(post(PASSWORD, ip='10.8.8.8'), 'Too many failed login attempts')  # the lock follows the account
 
 
 class PasswordResetDoesNotRevealAccountsTests(AccountTestCase):

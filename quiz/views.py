@@ -55,21 +55,37 @@ def _try_send_verification(request, user):
     except OSError:  # smtplib.SMTPException is an OSError too
         return False
 
-@rate_limit('register', 200, 3600, field='email', field_limit=3)
+def _try_send_already_registered(request, email):
+    """The address already has an account: tell its owner by email, so the page itself never says which addresses do."""
+    message = render_to_string('quiz/email/already_registered_email.txt', {
+        'login_url': request.build_absolute_uri(reverse('login')),
+        'reset_url': request.build_absolute_uri(reverse('password_reset')),
+    })
+    try:
+        send_mail('Your SRMIST Quiz Platform account', message, settings.DEFAULT_FROM_EMAIL, [email], fail_silently=False)
+        return True
+    except OSError:
+        return False
+
+# ponytail: 1000 an hour per address is far above one class; the real ceiling is the mail provider's daily limit.
+@rate_limit('register', 1000, 3600, field='email', field_limit=3)
 def register(request):
+    """New address: make the account and email the verification link. Address that already has an account: email its
+    owner instead. Either way the person sees the same page, so this form cannot be used to find out who has an account."""
     if request.method == 'POST':
         form = RegisterForm(request.POST)
         if form.is_valid():
-            try:
-                with transaction.atomic():
-                    user = form.save()
-            except IntegrityError:  # two people registered the same address at the same moment
-                form.add_error('email', 'This email address is already registered. Try logging in, or reset your password.')
-            else:
-                if not _try_send_verification(request, user):
-                    form.add_error('email', 'We could not send the email right now. Please try again in a few minutes.')
-                else:
-                    return render(request, 'quiz/verification_sent.html', {'email': user.email})
+            email, user = form.cleaned_data['email'], None
+            if not form.taken:
+                try:
+                    with transaction.atomic():
+                        user = form.save()
+                except IntegrityError:  # two people registered the same address at the same moment: the second is "taken"
+                    pass
+            sent = _try_send_verification(request, user) if user else _try_send_already_registered(request, email)
+            if sent:
+                return render(request, 'quiz/verification_sent.html', {'email': email})
+            form.add_error('email', 'We could not send the email right now. Please try again in a few minutes.')
     else:
         form = RegisterForm()
     return render(request, 'quiz/register.html', {'form': form})
@@ -97,13 +113,16 @@ def verify_email(request, uidb64, token):
         return render(request, 'quiz/verification_success.html', {'pending_teacher': not is_student(user)})
     return render(request, 'quiz/verification_set_password.html', {'form': form})
 
-@rate_limit('resend', 200, 3600, field='email', field_limit=5)
+@rate_limit('resend', 1000, 3600, field='email', field_limit=5)
 def resend_verification(request):
-    if request.method == 'POST':
-        user = pending_account(request.POST.get('email', '').strip())
-        if user and _try_send_verification(request, user):
-            return render(request, 'quiz/verification_sent.html', {'email': user.email})
-    return redirect('register')
+    """Same page for every address, so this cannot be used to find out which ones are waiting for their link."""
+    email = request.POST.get('email', '').strip() if request.method == 'POST' else ''
+    if not email:
+        return redirect('register')
+    user = pending_account(email)
+    if user:
+        _try_send_verification(request, user)  # a mail problem is not shown: the page says "resend" again anyway
+    return render(request, 'quiz/verification_sent.html', {'email': email})
 
 def student_required(view):
     """Only students take quizzes; everyone else is sent home (which explains their role)."""
@@ -461,7 +480,7 @@ def quiz_review(request, category_id):
 from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.tokens import default_token_generator
 
-@rate_limit('pwreset', 200, 3600, field='email', field_limit=5)
+@rate_limit('pwreset', 1000, 3600, field='email', field_limit=5)
 def custom_password_reset(request):
     """Sends a reset link to verified SRMIST accounts. The page shown is identical whether or not an email was
     sent, so it cannot be used to find out which addresses have accounts."""

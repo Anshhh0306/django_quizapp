@@ -15,6 +15,9 @@
             {% for error in form.non_field_errors %}
                 <div class="error">{{ error }}</div>
             {% endfor %}
+            {% if form.locked_for %}
+                <div class="error" id="lock-note">The password box is locked. You can try again in <strong id="lock-left"></strong>.</div>
+            {% endif %}
 
             <div class="form-field">
                 <label for="{{ form.username.id_for_label }}">Register number or email</label>
@@ -39,7 +42,7 @@
                 <a href="{% url 'password_reset' %}" class="forgot-password">Forgot Password?</a>
             </div>
 
-            <button type="submit" class="btn btn-create">Login</button>
+            <button type="submit" class="btn btn-create" id="login-button"{% if form.locked_for %} disabled{% endif %}>Login</button>
         </form>
 
         <p class="auth-link">
@@ -59,5 +62,30 @@
             button.textContent = '👁️';
         }
     }
+{% if form.locked_for %}
+    // Locked after too many wrong passwords: the password box stays grey until the time is up (the server enforces it too).
+    (function () {
+        const lockSeconds = {{ form.locked_for }};
+        const end = Date.now() + lockSeconds * 1000;
+        const password = document.getElementById('{{ form.password.id_for_label }}');
+        const button = document.getElementById('login-button');
+        function tick() {
+            const left = Math.ceil((end - Date.now()) / 1000);
+            if (left <= 0) {
+                password.disabled = false;
+                button.disabled = false;
+                document.getElementById('lock-note').remove();
+                password.focus();
+                return;
+            }
+            document.getElementById('lock-left').textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+            setTimeout(tick, 250);
+        }
+        tick();
+    })();
+{% endif %}
 </script>
+<style>
+    .simple-form input:disabled, .simple-form button:disabled { background: #e3e5e8; color: #8a8f98; cursor: not-allowed; }
+</style>
 {% endblock %}

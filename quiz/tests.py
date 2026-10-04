@@ -321,11 +321,14 @@ class QuizFlowTests(TestCase):
         self.client.post(url, {'new_password1': 'BrandNewPass!987', 'new_password2': 'BrandNewPass!987'})
         self.assertFalse(self.client.get(url).context['validlink'])
 
-    def test_email_uniqueness_is_case_insensitive(self):
+    def test_an_existing_address_is_recognised_in_any_letter_case_without_an_error_message(self):
         from quiz.forms import RegisterForm
-        form = RegisterForm({'username': 'x', 'email': 'AB1234@SRMIST.EDU.IN',
-                             'password1': 'TestPassword123!', 'password2': 'TestPassword123!'})
-        self.assertFalse(form.is_valid())
+        form = RegisterForm({'email': 'AB1234@SRMIST.EDU.IN'})
+        self.assertTrue(form.is_valid())  # no error to show: the page must not say which addresses exist
+        self.assertTrue(form.taken)
+        fresh = RegisterForm({'email': 'ab9999@srmist.edu.in'})
+        self.assertTrue(fresh.is_valid())
+        self.assertFalse(fresh.taken)
 
     def test_resend_verification_is_rate_limited_per_email(self):
         self.client.logout()
@@ -340,13 +343,13 @@ class QuizFlowTests(TestCase):
     def test_password_reset_is_rate_limited_per_ip(self):
         self.client.logout()
         codes = [self.client.post(reverse('password_reset'), {'email': f'x{i}@srmist.edu.in'}).status_code
-                 for i in range(201)]
-        self.assertEqual((codes[199], codes[200]), (200, 429))  # 200 an hour per address: a whole class behind one IP is fine
+                 for i in range(1001)]
+        self.assertEqual((codes[999], codes[1000]), (200, 429))  # 1000 an hour per address: a whole campus behind one IP is fine
 
     def test_register_is_rate_limited_per_ip(self):
         self.client.logout()
-        codes = [self.client.post(reverse('register'), {}).status_code for _ in range(201)]
-        self.assertEqual((codes[199], codes[200]), (200, 429))
+        codes = [self.client.post(reverse('register'), {}).status_code for _ in range(1001)]
+        self.assertEqual((codes[999], codes[1000]), (200, 429))
 
     def test_get_requests_are_not_counted(self):
         self.client.logout()

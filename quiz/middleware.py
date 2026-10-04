@@ -1,6 +1,33 @@
+from django.conf import settings
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.urls import resolve
+
+from .ratelimit import bump
+
+
+class RequestCapMiddleware:
+    """Catch-all against one script (or one runaway page) hammering the site: a cap per network address, checked first
+    and without touching the database, then a cap per signed-in user. Both are per minute and far above real use
+    (settings.REQUEST_CAPS; empty = off, which is how the test suite runs). The tighter caps on saving answers, pings
+    and login stay as they are. It cannot stop a flood from many machines: that has to be stopped in front of Django."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        caps = settings.REQUEST_CAPS
+        if caps and (bump(f'rc:ip:{request.META.get("REMOTE_ADDR")}', 60) > caps['address']
+                     or (request.user.is_authenticated and bump(f'rc:user:{request.user.pk}', 60) > caps['user'])):
+            if request.path.startswith('/exam/'):  # the exam page reads JSON from its background calls
+                response = JsonResponse({'ok': False, 'reason': 'slow_down'}, status=429)
+            else:
+                response = HttpResponse('Too many requests. Please slow down and try again in a minute.', status=429)
+            response['Retry-After'] = '60'
+            return response
+        return self.get_response(request)
+
 
 class AdminAccessMiddleware:
     def __init__(self, get_response):
