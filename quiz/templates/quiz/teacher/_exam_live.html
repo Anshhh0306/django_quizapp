@@ -1,4 +1,4 @@
-<ul>
+<ul class="live-facts">
   <li>Status: <strong>{{ phase }}</strong>{% if exam.starts_at %} &mdash; starts {{ exam.starts_at|time:"H:i:s" }}, ends {{ exam.ends_at|time:"H:i:s" }}{% endif %}</li>
   <li>Seats:
     {% if has_list %}{{ seats_used }} of {{ exam.seat_limit }} listed students have joined
@@ -11,9 +11,9 @@
 
 <h3>{% if has_list %}Class list{% else %}Joined{% endif %}</h3>
 {% if roster %}
-<ul style="list-style:none;padding:0;">
+<ul class="roster">
   {% for name, state in roster %}
-  <li style="padding:2px 8px;{% if state == 'absent' %}color:#888;{% elif state == 'submitted' %}background:#cfe2ff;{% elif state == 'frozen' %}background:#f8d7da;{% elif state == 'answering' %}background:#fff3cd;{% else %}background:#d4edda;{% endif %}">
+  <li class="is-{{ state }}">
     {% if state == 'absent' %}&#9675; {{ name }} &mdash; not joined
     {% elif state == 'lobby' %}&#10003; {{ name }} &mdash; in lobby
     {% elif state == 'frozen' %}&#9888; {{ name }} &mdash; <strong>frozen</strong>
@@ -29,9 +29,11 @@
 
 {% if integrity %}
 <h3>Integrity flags ({{ integrity|length }})</h3>
-<p><small>A strike is counted each time a student leaves the exam window (another tab or window, minimizing, leaving fullscreen); staying away adds one more each minute. A silent page is only a flag: it can be another window, a dropped connection or a throttled background tab. Nothing here is decided automatically except the third strike.</small></p>
-<table border="1" cellpadding="4" style="border-collapse:collapse;">
-  <tr><th>Student</th><th>Strikes</th><th>Left the window</th><th>Away in total</th><th>Notes</th></tr>
+<p class="help-text">A strike is counted each time a student leaves the exam window (another tab or window, minimizing, leaving fullscreen); staying away adds one more each minute. A silent page is only a flag: it can be another window, a dropped connection or a throttled background tab. Nothing here is decided automatically except the third strike.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Student</th><th>Strikes</th><th>Left the window</th><th>Away in total</th><th>Notes</th></tr></thead>
+  <tbody>
   {% for row in integrity %}{% with a=row.attempt %}
   <tr>
     <td>{{ a.user.username }}</td>
@@ -48,13 +50,15 @@
     </td>
   </tr>
   {% endwith %}{% endfor %}
+  </tbody>
 </table>
+</div>
 {% endif %}
 
 {% if intruders %}
 <h3>Other-device attempts ({{ intruders|length }})</h3>
-<p><small>Another device tried to use these students' accounts while the student's own device was working. It was turned away and the student was not interrupted. You may want to ask them about it after the exam.</small></p>
-<ul>
+<p class="help-text">Another device tried to use these students' accounts while the student's own device was working. It was turned away and the student was not interrupted. You may want to ask them about it after the exam.</p>
+<ul class="log">
   {% for a in intruders %}
   <li>{{ a.user.username }}: {{ a.intrusions }} attempt{{ a.intrusions|pluralize }}, last from {{ a.last_intruder_label }}{% if a.last_intruder_ip %} ({{ a.last_intruder_ip }}){% endif %} at {{ a.last_intrusion_at|time:"H:i:s" }}</li>
   {% endfor %}
@@ -63,17 +67,17 @@
 
 {% if events %}
 <h3>Activity log</h3>
-<ul>
+<ul class="log">
   {% for e in events %}
-  <li>{{ e.created_at|time:"H:i:s" }} &ndash; {{ e.detail }}{% if e.actor %} <small>(by {{ e.actor.username }})</small>{% endif %}</li>
+  <li><span class="mono">{{ e.created_at|time:"H:i:s" }}</span> &ndash; {{ e.detail }}{% if e.actor %} <small>(by {{ e.actor.username }})</small>{% endif %}</li>
   {% endfor %}
 </ul>
 {% endif %}
 
 {% if reconnected %}
 <h3>Reconnected ({{ reconnected|length }})</h3>
-<p><small>These students came back through the link after joining (for example a wifi drop). They were let back in. Check with them afterwards if needed.</small></p>
-<ul>
+<p class="help-text">These students came back through the link after joining (for example a wifi drop). They were let back in. Check with them afterwards if needed.</p>
+<ul class="log">
   {% for a in reconnected %}
   <li>{{ a.user.username }}: {{ a.rejoins }} time{{ a.rejoins|pluralize }}, last at {{ a.last_rejoin_at|time:"H:i:s" }}</li>
   {% endfor %}
@@ -82,7 +86,7 @@
 
 {% if denied %}
 <h3>Turned away ({{ denied|length }})</h3>
-<ul>
+<ul class="log">
   {% for d in denied %}
   <li>{{ d.user.username }}: {% if d.reason == 'not_listed' %}not on the class list{% elif d.reason == 'full' %}no seats left{% else %}{{ d.reason }}{% endif %} ({{ d.tries }} tr{{ d.tries|pluralize:"y,ies" }}, last at {{ d.last_at|time:"H:i:s" }})</li>
   {% endfor %}

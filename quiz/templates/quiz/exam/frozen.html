@@ -1,29 +1,23 @@
 {% extends "base.html" %}
+{% block title %}Exam paused - QuizHub{% endblock %}
+{% block topbar %}{% endblock %}
 {% block content %}
-<style>
-  .skeleton { filter: blur(10px); opacity: .6; max-width: 700px; margin: 40px auto; pointer-events: none; user-select: none; }
-  .skeleton div { height: 18px; background: #bbb; border-radius: 6px; margin: 14px 0; }
-  .freeze-card { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
-                 background: rgba(255,255,255,.55); backdrop-filter: blur(6px); z-index: 50; padding: 24px; }
-  .freeze-card div { max-width: 460px; background: #fff; padding: 28px; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.2); }
-</style>
-
 <div class="skeleton" aria-hidden="true">
   <div style="width:60%"></div><div style="width:90%"></div><div style="width:80%"></div><div style="width:85%"></div>
   <div style="width:70%"></div><div style="width:90%"></div><div style="width:50%"></div>
 </div>
 
-<div class="freeze-card">
-  <div>
+<div class="overlay overlay--soft" style="display:flex;">
+  <div class="overlay-card">
     {% if blocked %}
       <h2>Open on another device</h2>
       <p>This exam is already open on a different device, so it can't be used here. Please talk to your teacher.</p>
-      <p><small>If you have not opened it anywhere else, check that cookies are allowed in this browser, then reload.</small></p>
+      <p class="small muted">If you have not opened it anywhere else, check that cookies are allowed in this browser, then reload.</p>
     {% else %}
       <h2>Your exam is paused</h2>
       <p id="msg">Waiting for your teacher to verify. Please keep this page open and stay in this window.</p>
     {% endif %}
-    <p><small>Device code: <strong>{{ device_tag }}</strong></small></p>
+    <p class="small muted device">Device code: <strong>{{ device_tag }}</strong></p>
   </div>
 </div>
 

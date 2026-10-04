@@ -1,91 +1,73 @@
 {% extends "base.html" %}
+{% block title %}Sign in - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-    <div class="auth-form-container">
-        <h2>Welcome Back!</h2>
-        <p>Login to continue your learning journey</p>
-        <p style="background:#fff3cd;border:1px solid #e0c36a;padding:10px;border-radius:6px;font-size:.9rem;">
-          <strong>Do not share your login or your exam link with anyone.</strong>
-          During an exam the system records which device is used. If another device uses your account, your exam
-          is paused or the attempt is reported to your teacher, and it can affect your result.
-        </p>
+<div class="page">
+  <div class="auth-form-container">
+    <h1 class="h2">Sign in</h1>
+    <p class="muted">Use your register number or college email.</p>
+    <p class="notice notice--quiet">
+      <strong>Do not share your login or your exam link with anyone.</strong>
+      During an exam the system records which device is used. If another device uses your account, your exam
+      is paused or the attempt is reported to your teacher, and it can affect your result.
+    </p>
 
-        <form method="post" class="simple-form">
-            {% csrf_token %}
-            {% for error in form.non_field_errors %}
-                <div class="error">{{ error }}</div>
-            {% endfor %}
-            {% if form.locked_for %}
-                <div class="error" id="lock-note">The password box is locked. You can try again in <strong id="lock-left"></strong>.</div>
-            {% endif %}
+    <form method="post" class="simple-form">
+      {% csrf_token %}
+      {% for error in form.non_field_errors %}
+        <div class="error" role="alert">{{ error }}</div>
+      {% endfor %}
+      {% if form.locked_for %}
+        <div class="error" id="lock-note">The password box is locked. You can try again in <strong id="lock-left"></strong>.</div>
+      {% endif %}
 
-            <div class="form-field">
-                <label for="{{ form.username.id_for_label }}">Register number or email</label>
-                {{ form.username }}
-                {% if form.username.errors %}
-                    <div class="error">{{ form.username.errors.0 }}</div>
-                {% endif %}
-            </div>
+      <div class="form-field">
+        <label for="{{ form.username.id_for_label }}">Register number or email</label>
+        {{ form.username }}
+        {% if form.username.errors %}<div class="error">{{ form.username.errors.0 }}</div>{% endif %}
+      </div>
 
-            <div class="form-field">
-                <label for="{{ form.password.id_for_label }}">Password</label>
-                <div class="password-field">
-                    {{ form.password }}
-                    <button type="button" class="password-toggle" onclick="togglePasswordVisibility(this)">👁️</button>
-                </div>
-                {% if form.password.errors %}
-                    <div class="error">{{ form.password.errors.0 }}</div>
-                {% endif %}
-            </div>
+      <div class="form-field">
+        <label for="{{ form.password.id_for_label }}">Password</label>
+        <div class="password-field">
+          {{ form.password }}
+          <button type="button" class="password-toggle" aria-pressed="false">Show</button>
+        </div>
+        {% if form.password.errors %}<div class="error">{{ form.password.errors.0 }}</div>{% endif %}
+      </div>
 
-            <div class="form-footer">
-                <a href="{% url 'password_reset' %}" class="forgot-password">Forgot Password?</a>
-            </div>
+      <div class="form-footer">
+        <a href="{% url 'password_reset' %}" class="forgot-password">Forgot your password?</a>
+      </div>
 
-            <button type="submit" class="btn btn-create" id="login-button"{% if form.locked_for %} disabled{% endif %}>Login</button>
-        </form>
+      <button type="submit" class="btn btn-create btn-block" id="login-button"{% if form.locked_for %} disabled{% endif %}>Sign in</button>
+    </form>
 
-        <p class="auth-link">
-            Don't have an account? <a href="{% url 'register' %}">Create Account</a>
-        </p>
-    </div>
+    <p class="auth-link">New here? <a href="{% url 'register' %}">Create an account</a></p>
+  </div>
 </div>
 
-<script>
-    function togglePasswordVisibility(button) {
-        const passwordInput = button.parentElement.querySelector('input');
-        if (passwordInput.type === 'password') {
-            passwordInput.type = 'text';
-            button.textContent = '🔒';
-        } else {
-            passwordInput.type = 'password';
-            button.textContent = '👁️';
-        }
-    }
 {% if form.locked_for %}
-    // Locked after too many wrong passwords: the password box stays grey until the time is up (the server enforces it too).
-    (function () {
-        const lockSeconds = {{ form.locked_for }};
-        const end = Date.now() + lockSeconds * 1000;
-        const password = document.getElementById('{{ form.password.id_for_label }}');
-        const button = document.getElementById('login-button');
-        function tick() {
-            const left = Math.ceil((end - Date.now()) / 1000);
-            if (left <= 0) {
-                password.disabled = false;
-                button.disabled = false;
-                document.getElementById('lock-note').remove();
-                password.focus();
-                return;
-            }
-            document.getElementById('lock-left').textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
-            setTimeout(tick, 250);
-        }
-        tick();
-    })();
-{% endif %}
+<script>
+  // Locked after too many wrong passwords: the password box stays grey until the time is up (the server enforces it too).
+  (function () {
+    const lockSeconds = {{ form.locked_for }};
+    const end = Date.now() + lockSeconds * 1000;
+    const password = document.getElementById('{{ form.password.id_for_label }}');
+    const button = document.getElementById('login-button');
+    function tick() {
+      const left = Math.ceil((end - Date.now()) / 1000);
+      if (left <= 0) {
+        password.disabled = false;
+        button.disabled = false;
+        document.getElementById('lock-note').remove();
+        password.focus();
+        return;
+      }
+      document.getElementById('lock-left').textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+      setTimeout(tick, 250);
+    }
+    tick();
+  })();
 </script>
-<style>
-    .simple-form input:disabled, .simple-form button:disabled { background: #e3e5e8; color: #8a8f98; cursor: not-allowed; }
-</style>
+{% endif %}
 {% endblock %}

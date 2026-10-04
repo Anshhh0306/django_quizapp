@@ -1,8 +1,11 @@
 {% extends "base.html" %}
+{% block title %}Something went wrong - QuizHub{% endblock %}
 {% block content %}
-  <div class="error-container">
-    <h1>Oops!</h1>
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">Something went wrong</h1>
     <p>{{ message }}</p>
-    <a href="{% url 'home' %}" class="btn">Back to Categories</a>
+    <a href="{% url 'home' %}" class="btn">Back to home</a>
   </div>
+</div>
 {% endblock %}

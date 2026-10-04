@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% block title %}Recovery codes - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <div class="auth-form-container">
-    <h2>{% if first_time %}Two-factor sign-in is on{% else %}Your new recovery codes{% endif %}</h2>
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">{% if first_time %}Two-factor sign-in is on{% else %}Your new recovery codes{% endif %}</h1>
     <p><strong>Save these recovery codes now</strong> (write them down or keep them in a password manager).
        If you lose your phone, each code lets you sign in once. They are shown only this time.</p>
-    <pre style="background:#f5f5f5;padding:14px;border-radius:6px;font-size:1.1rem;line-height:1.7;">{% for c in codes %}{{ c }}
+    <pre class="codes">{% for c in codes %}{{ c }}
 {% endfor %}</pre>
     <a href="{{ next }}" class="btn btn-create">I have saved them, continue</a>
   </div>

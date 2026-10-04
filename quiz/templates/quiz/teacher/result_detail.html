@@ -1,25 +1,30 @@
 {% extends "base.html" %}
+{% block title %}{{ attempt.user.username }}: {{ exam.title }} - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <h2>{{ attempt.user.username }}: {{ exam.title }}</h2>
-  <p><a href="{% url 'exam_results' exam.pk %}">Back to results</a></p>
+<div class="page page--narrow">
+  <div class="page-head">
+    <div>
+      <h1>{{ attempt.user.username }}: {{ exam.title }}</h1>
+      <p class="muted"><a href="{% url 'exam_results' exam.pk %}">Back to results</a></p>
+    </div>
+  </div>
   {% if attempt.submitted_at %}
     <p>Score: <strong>{{ attempt.score }} / {{ attempt.total_points }}</strong>. Submitted at {{ attempt.submitted_at|time:"H:i:s" }}.</p>
   {% else %}
-    <p>Not submitted yet. These are the answers saved so far.</p>
+    <p class="notice notice--warn">Not submitted yet. These are the answers saved so far.</p>
   {% endif %}
 
   {% for section in sections %}
-  <h3>{{ section.marks }}-mark questions: {{ section.earned }} / {{ section.possible }}</h3>
-  <ol>
+  <h2 class="h3 gap-top">{{ section.marks }}-mark questions: {{ section.earned }} / {{ section.possible }}</h2>
+  <ol class="review">
   {% for item in section.items %}
-    <li style="margin-bottom:12px;">
-      {{ item.question.text }}
-      <span style="font-weight:bold;color:{% if item.state == 'correct' %}#1e7e34{% elif item.state == 'wrong' %}#c0392b{% else %}#888{% endif %};">
+    <li class="is-{{ item.state }}">
+      <span class="review__q">{{ item.question.text }}</span>
+      <span class="review__state">
         {% if item.state == 'correct' %}&#10003; correct ({{ item.question.points }}){% elif item.state == 'wrong' %}&#10007; wrong{% else %}&ndash; not answered{% endif %}
-      </span><br>
-      {% if item.picked %}Chose: <em>{{ item.picked.text }}</em><br>{% endif %}
-      {% if item.state != 'correct' and item.right %}Correct answer: <em>{{ item.right.text }}</em>{% endif %}
+      </span>
+      {% if item.picked %}<span class="review__line">Chose: <em>{{ item.picked.text }}</em></span>{% endif %}
+      {% if item.state != 'correct' and item.right %}<span class="review__line">Correct answer: <em>{{ item.right.text }}</em></span>{% endif %}
     </li>
   {% endfor %}
   </ol>

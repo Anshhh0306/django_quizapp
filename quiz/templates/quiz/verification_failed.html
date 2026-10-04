@@ -1,64 +1,11 @@
 {% extends "base.html" %}
-
+{% block title %}Link not valid - QuizHub{% endblock %}
 {% block content %}
-<div class="verification-failed">
-    <div class="error-icon">✗</div>
-    <h2>Verification Failed</h2>
-    <p>Sorry, this verification link is invalid or has expired.</p>
-    <div class="action-buttons">
-        <a href="{% url 'register' %}" class="register-btn">Register Again</a>
-    </div>
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">This link doesn't work</h1>
+    <p>It has expired or was already used. Register again and we'll send you a new one.</p>
+    <a href="{% url 'register' %}" class="btn btn-create register-btn">Register again</a>
+  </div>
 </div>
-
-<style>
-.verification-failed {
-    max-width: 500px;
-    margin: 3rem auto;
-    padding: 2rem;
-    text-align: center;
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-.error-icon {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 1.5rem;
-    background: #dc3545;
-    color: white;
-    border-radius: 50%;
-    font-size: 3rem;
-    line-height: 80px;
-    text-align: center;
-}
-
-.verification-failed h2 {
-    color: #2c3e50;
-    margin-bottom: 1rem;
-}
-
-.verification-failed p {
-    color: #666;
-    margin-bottom: 2rem;
-}
-
-.action-buttons {
-    margin-top: 2rem;
-}
-
-.register-btn {
-    display: inline-block;
-    padding: 0.8rem 2rem;
-    background: #dc3545;
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    transition: background-color 0.3s;
-}
-
-.register-btn:hover {
-    background: #c82333;
-}
-</style>
 {% endblock %}

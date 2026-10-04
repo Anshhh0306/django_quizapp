@@ -1,51 +1,86 @@
-{% load static %}
-<!doctype html>
-<html>
+{% load static %}<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Django Quiz</title>
-  <link rel="stylesheet" href="{% static 'quiz/style.css' %}">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#FFFFFF">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23FFE066'/%3E%3Cpath d='M9 16.5l5 5 9-11' fill='none' stroke='%231B2230' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <title>{% block title %}QuizHub{% endblock %}</title>
+  <link rel="preload" href="{% static 'quiz/fonts/AtkinsonHyperlegibleNext.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{% static 'quiz/style.css' %}?v={{ css_version }}">
+  <script>document.documentElement.classList.add('js');</script>
+  {% block head %}{% endblock %}
 </head>
 <body>
-  <nav>
-    <div class="nav-left">
-      <a href="{% url 'home' %}" class="nav-brand">QuizHub</a>
+  <a class="skip-link" href="#main">Skip to content</a>
+  {% block topbar %}
+  <header class="topbar{% if user.is_authenticated %} has-menu{% endif %}">
+    <div class="topbar__inner">
+      <a href="{% url 'home' %}" class="brand"><span class="brand__mark" aria-hidden="true"></span>QuizHub</a>
       {% if user.is_authenticated %}
-        <div class="user-welcome-inline">
-          <span class="welcome-text">Welcome, {{ user.username }}!</span>
-          {% if role == 'admin' %}
-            <span class="role-badge admin">Superuser</span>
-          {% elif role == 'teacher' %}
-            <span class="role-badge staff">Teacher</span>
-          {% elif role == 'pending' %}
-            <span class="role-badge pending">Awaiting approval</span>
-          {% endif %}
-        </div>
-        <div class="user-actions-inline">
-          {% if user.is_superuser %}
-            <a href="/admin/" class="admin-link">Admin Panel</a>
-          {% endif %}
-          <a href="{% url 'user_profile' %}">My Profile</a>
+        <button type="button" class="menu-button" aria-expanded="false" aria-controls="site-menu">Menu</button>
+        <nav id="site-menu" class="site-menu" aria-label="Main">
+          <a href="{% url 'home' %}">Home</a>
+          {% if role == 'teacher' or role == 'admin' %}<a href="{% url 'teach_home' %}">Teacher tools</a>{% endif %}
+          {% if user.is_superuser %}<a href="/admin/">Admin site</a>{% endif %}
+          <a href="{% url 'user_profile' %}">My profile</a>
           <a href="{% url 'two_factor' %}">Security</a>
-          <form action="{% url 'logout' %}" method="post" style="display:inline;">
+          <span class="site-menu__user">
+            <span class="welcome-text">Welcome, {{ user.username }}!</span>
+            {% if role == 'admin' %}
+              <span class="role-badge admin">Superuser</span>
+            {% elif role == 'teacher' %}
+              <span class="role-badge staff">Teacher</span>
+            {% elif role == 'pending' %}
+              <span class="role-badge pending">Awaiting approval</span>
+            {% endif %}
+          </span>
+          <form action="{% url 'logout' %}" method="post">
             {% csrf_token %}
-            <button type="submit" class="logout-btn">Logout</button>
+            <button type="submit" class="logout-btn">Log out</button>
           </form>
-        </div>
-      {% endif %}
-    </div>
-    <div class="nav-right">
-      {% if user.is_authenticated %}
-        <a href="{% url 'home' %}">Home</a>
+        </nav>
       {% else %}
-        <a href="{% url 'login' %}">Login</a>
-        <a href="{% url 'register' %}">Register</a>
+        <nav class="site-menu" aria-label="Main">
+          <a href="{% url 'login' %}">Sign in</a>
+          <a href="{% url 'register' %}" class="btn btn-create btn-small">Create account</a>
+        </nav>
       {% endif %}
     </div>
-  </nav>
-  
-  <div class="main-content">
+  </header>
+  {% endblock %}
+
+  <main id="main" class="main-content">
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li class="notice{% if message.level_tag == 'error' %} notice--error{% elif message.level_tag == 'success' %} notice--ok{% elif message.level_tag == 'warning' %} notice--warn{% endif %}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
     {% block content %}{% endblock %}
-  </div>
+  </main>
+
+  <script>
+    (function () {
+      // "Show / Hide" on every password box
+      document.addEventListener('click', function (e) {
+        var toggle = e.target.closest('.password-toggle');
+        if (!toggle) return;
+        var input = toggle.parentElement.querySelector('input'), show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        toggle.textContent = show ? 'Hide' : 'Show';
+        toggle.setAttribute('aria-pressed', String(show));
+      });
+      var button = document.querySelector('.menu-button'), menu = document.getElementById('site-menu');
+      if (!button || !menu) return;
+      button.addEventListener('click', function () {
+        var open = button.getAttribute('aria-expanded') !== 'true';
+        button.setAttribute('aria-expanded', String(open));
+        menu.classList.toggle('is-open', open);
+      });
+    })();
+  </script>
 </body>
 </html>

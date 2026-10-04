@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% block title %}{{ title }} - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <div class="auth-form-container">
-    <h2>{{ title }}</h2>
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">{{ title }}</h1>
     <p>{{ message }}</p>
-    <p><a href="{% url 'home' %}">Back to home</a></p>
+    <a href="{% url 'home' %}" class="btn">Back to home</a>
   </div>
 </div>
 {% endblock %}

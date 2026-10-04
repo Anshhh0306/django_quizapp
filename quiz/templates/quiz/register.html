@@ -1,27 +1,23 @@
 {% extends "base.html" %}
+{% block title %}Create account - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-    <div class="auth-form-container">
-        <h2>Create Your QuizMaster Account</h2>
-        <p>Enter your SRMIST email. We send you a link, and you choose your password after you click it.</p>
+<div class="page">
+  <div class="auth-form-container">
+    <h1 class="h2">Create your account</h1>
+    <p class="muted">Enter your college email. We send you a link, and you choose your password after you click it.</p>
 
-        <form method="post" class="simple-form">
-            {% csrf_token %}
-            <div class="form-field">
-                <label for="{{ form.email.id_for_label }}">Email</label>
-                {{ form.email }}
-                {% if form.email.errors %}
-                    <div class="error">{{ form.email.errors.0 }}</div>
-                {% endif %}
-                <small class="help-text">{{ form.email.help_text }}</small>
-            </div>
+    <form method="post" class="simple-form">
+      {% csrf_token %}
+      <div class="form-field">
+        <label for="{{ form.email.id_for_label }}">Email</label>
+        {{ form.email }}
+        {% if form.email.errors %}<div class="error" role="alert">{{ form.email.errors.0 }}</div>{% endif %}
+        <small class="help-text">{{ form.email.help_text }}</small>
+      </div>
+      <button type="submit" class="btn btn-create btn-block">Send my verification email</button>
+    </form>
 
-            <button type="submit" class="btn btn-create">Send my verification email</button>
-        </form>
-
-        <p class="auth-link">
-            Already have an account? <a href="{% url 'login' %}">Login</a>
-        </p>
-    </div>
+    <p class="auth-link">Already have an account? <a href="{% url 'login' %}">Sign in</a></p>
+  </div>
 </div>
 {% endblock %}

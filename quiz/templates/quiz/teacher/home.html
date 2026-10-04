@@ -1,32 +1,49 @@
 {% extends "base.html" %}
+{% block title %}Teacher tools - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <h2>Teacher tools</h2>
-  {% if messages %}{% for m in messages %}<div class="error">{{ m }}</div>{% endfor %}{% endif %}
-  <p>
-    <a href="{% url 'question_bank' %}" class="btn btn-view">My question bank</a>
-    <a href="{% url 'exam_new' %}" class="btn btn-create">Create exam</a>
-  </p>
-  <h3>My exams</h3>
+<div class="page">
+  <div class="page-head">
+    <h1>Teacher tools</h1>
+    <div class="cluster">
+      <a href="{% url 'question_bank' %}" class="btn btn-view">My question bank</a>
+      <a href="{% url 'exam_new' %}" class="btn btn-create">Create exam</a>
+    </div>
+  </div>
+  {% for m in messages %}<p class="notice notice--error">{{ m }}</p>{% endfor %}
+
+  <h2>My exams</h2>
   {% if exams %}
-    <ul>
+    <div class="rows">
     {% for e in exams %}
-      <li><a href="{% url 'exam_detail' e.pk %}">{{ e.title }}</a> &mdash; {{ e.get_mode_display }}, {{ e.status }}, {{ e.seat_limit }} seats</li>
+      <div class="row">
+        <div class="row__main">
+          <h3 class="row__title"><a href="{% url 'exam_detail' e.pk %}">{{ e.title }}</a></h3>
+          <p class="row__meta">{{ e.get_mode_display }}, {{ e.seat_limit }} seats</p>
+        </div>
+        <span class="chip {% if e.status == 'running' %}chip--live{% elif e.status == 'lobby' %}chip--wait{% elif e.status == 'ended' %}chip--done{% endif %}">{{ e.status|capfirst }}</span>
+        <a href="{% url 'exam_detail' e.pk %}" class="btn btn-small row__action">Open</a>
+      </div>
     {% endfor %}
-    </ul>
+    </div>
   {% else %}
     <p>No exams yet. Upload questions, then create your first exam.</p>
   {% endif %}
 
   {% if others is not None %}
-  <h3>Other teachers' exams (administrator)</h3>
+  <h2 class="gap-top">Other teachers' exams (administrator)</h2>
   <p class="help-text">You can open any of these, watch it live, see results and step in if needed. Whatever you do is written to that exam's activity log with your name.</p>
   {% if others %}
-    <ul>
+    <div class="rows">
     {% for e in others %}
-      <li><a href="{% url 'exam_detail' e.pk %}">{{ e.title }}</a> &mdash; {{ e.owner.username }}, {{ e.get_mode_display }}, {{ e.status }}</li>
+      <div class="row">
+        <div class="row__main">
+          <h3 class="row__title"><a href="{% url 'exam_detail' e.pk %}">{{ e.title }}</a></h3>
+          <p class="row__meta">{{ e.owner.username }}, {{ e.get_mode_display }}</p>
+        </div>
+        <span class="chip {% if e.status == 'running' %}chip--live{% elif e.status == 'lobby' %}chip--wait{% elif e.status == 'ended' %}chip--done{% endif %}">{{ e.status|capfirst }}</span>
+      </div>
     {% endfor %}
-    </ul>
+    </div>
     {% if others|length >= 200 %}<p><small>Showing the newest 200.</small></p>{% endif %}
   {% else %}
     <p>No other teacher has created an exam yet.</p>
