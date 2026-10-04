@@ -1,23 +1,25 @@
 {% extends "base.html" %}
+{% block title %}Account security - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <div class="auth-form-container">
-    <h2>Account security</h2>
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">Account security</h1>
     {% if enabled %}
       <p><strong>Two-factor sign-in is on.</strong> Recovery codes left: <strong>{{ codes_left }}</strong>.
-         {% if codes_left < 3 %}<span style="color:#b03a2e;">Make a new set soon.</span>{% endif %}</p>
+         {% if codes_left < 3 %}<span class="error">Make a new set soon.</span>{% endif %}</p>
 
-      <form method="post" action="{% url 'two_factor_codes' %}" class="simple-form"
+      <form method="post" action="{% url 'two_factor_codes' %}"
             onsubmit="return confirm('Make a new set of recovery codes? The old ones stop working.');">
         {% csrf_token %}
         <button type="submit" class="btn">Make new recovery codes</button>
       </form>
 
       {% if required %}
-        <p style="margin-top:18px;font-size:.9rem;">Your role requires two-factor sign-in, so it cannot be turned off.
+        <p class="notice">Your role requires two-factor sign-in, so it cannot be turned off.
            If you lose your phone and your recovery codes, ask the administrator to reset it.</p>
       {% else %}
-        <h3 style="margin-top:22px;">Turn it off</h3>
+        <hr>
+        <h2 class="h3">Turn it off</h2>
         {% if error == 'password' %}<div class="error" role="alert">That password was not right.</div>{% endif %}
         <form method="post" action="{% url 'two_factor_off' %}" class="simple-form"
               onsubmit="return confirm('Turn two-factor sign-in off?');">
@@ -26,7 +28,7 @@
             <label for="password">Your password</label>
             <input id="password" name="password" type="password" autocomplete="current-password" required>
           </div>
-          <button type="submit" class="btn">Turn off</button>
+          <button type="submit" class="btn btn-danger">Turn off</button>
         </form>
       {% endif %}
     {% else %}

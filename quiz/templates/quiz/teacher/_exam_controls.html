@@ -1,12 +1,12 @@
 <div data-sig="{{ sig }}">
 {% if frozen %}
-<div style="border:2px solid #c0392b;padding:10px;margin:12px 0;background:#fdecea;">
-  <h3 style="margin-top:0;">Frozen: needs you ({{ frozen|length }})</h3>
-  <p><small>Their clock keeps running. Ask the student to read the <strong>device code</strong> on their screen and match it to the code in [brackets] below, read the evidence, choose which device may continue, and add extra time if it was not their fault.</small></p>
+<div class="panel panel--bad">
+  <h3>Frozen: needs you ({{ frozen|length }})</h3>
+  <p class="help-text">Their clock keeps running. Ask the student to read the <strong>device code</strong> on their screen and match it to the code in [brackets] below, read the evidence, choose which device may continue, and add extra time if it was not their fault.</p>
   {% for a in frozen %}
-  <div style="border-top:1px solid #e0b4af;padding:8px 0;">
+  <div class="panel__item">
     <strong>{{ a.user.username }}</strong> (frozen at {{ a.frozen_at|time:"H:i:s" }}{% if a.freezes > 1 %}, {{ a.freezes }} times{% endif %})
-    <ul style="margin:6px 0;font-size:.92rem;">
+    <ul>
       <li>Original device [{{ a.device_tag }}]:
         {% if a.evidence.original_back_ago is not None %}<strong>checked in again {{ a.evidence.original_back_ago }} s ago, so it is probably still in use</strong>
         {% elif a.evidence.silent_before is not None %}had been silent for {{ a.evidence.silent_before }} s when the second device arrived, and has not checked in since
@@ -23,18 +23,18 @@
       <ul>{% for e in a.evidence.events %}<li>{{ e.created_at|time:"H:i:s" }} &ndash; {{ e.detail }}</li>{% endfor %}</ul>
     </details>
     {% endif %}
-    <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="unfreeze-{{ a.pk }}"
+    <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form inline-form" data-key="unfreeze-{{ a.pk }}"
           onsubmit="return confirm('Unfreeze {{ a.user.username }}? The device you did NOT choose will be turned away.');">
       {% csrf_token %}
       <input type="hidden" name="action" value="unfreeze">
       <input type="hidden" name="attempt" value="{{ a.pk }}">
-      <label>Allow:
+      <label>Allow
         <select name="device">
           <option value="original">Original [{{ a.device_tag }}]: {{ a.device_label }}{% if a.device_ip %} ({{ a.device_ip }}){% endif %}{% if a.device_seen_at %}, last active {{ a.device_seen_at|time:"H:i:s" }}{% endif %}</option>
           <option value="new">New [{{ a.challenger_tag }}]: {{ a.challenger_label }}{% if a.challenger_ip %} ({{ a.challenger_ip }}){% endif %}</option>
         </select>
       </label>
-      <label>Extra time:
+      <label>Extra time
         <select name="minutes">{% for m in minutes %}<option value="{{ m }}">{% if m == 0 %}none{% else %}{{ m }} min{% endif %}</option>{% endfor %}</select>
       </label>
       <button type="submit" class="btn btn-create">Unfreeze</button>
@@ -45,17 +45,17 @@
 {% endif %}
 
 {% if reopenable %}
-<div style="border:2px solid #b8860b;padding:10px;margin:12px 0;background:#fff8e1;">
-  <h3 style="margin-top:0;">Submitted automatically: needs you ({{ reopenable|length }})</h3>
-  <p><small>These students left the exam window until the third strike, so the exam was submitted for them. Look at the activity log, then let them continue (their answers are kept and their strikes start again) or leave it as it is.</small></p>
+<div class="panel panel--warn">
+  <h3>Submitted automatically: needs you ({{ reopenable|length }})</h3>
+  <p class="help-text">These students left the exam window until the third strike, so the exam was submitted for them. Look at the activity log, then let them continue (their answers are kept and their strikes start again) or leave it as it is.</p>
   {% for a in reopenable %}
-  <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="reopen-{{ a.pk }}" style="border-top:1px solid #e6d28a;padding:8px 0;"
+  <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form inline-form panel__item" data-key="reopen-{{ a.pk }}"
         onsubmit="return confirm('Let {{ a.user.username }} continue the exam?');">
     {% csrf_token %}
     <input type="hidden" name="action" value="reopen">
     <input type="hidden" name="attempt" value="{{ a.pk }}">
-    <strong>{{ a.user.username }}</strong> &mdash; left the window {{ a.leaves }} time{{ a.leaves|pluralize }}, away {{ a.away_seconds }} s in total
-    <label>Extra time:
+    <span><strong>{{ a.user.username }}</strong> &mdash; left the window {{ a.leaves }} time{{ a.leaves|pluralize }}, away {{ a.away_seconds }} s in total</span>
+    <label>Extra time
       <select name="minutes">{% for m in minutes %}<option value="{{ m }}">{% if m == 0 %}none{% else %}{{ m }} min{% endif %}</option>{% endfor %}</select>
     </label>
     <button type="submit" class="btn btn-create">Let them continue</button>
@@ -65,9 +65,9 @@
 {% endif %}
 
 {% if taking and exam.mode == 'scheduled' %}
-<div style="margin:12px 0;">
+<div class="tool">
   <h3>Give extra time</h3>
-  <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="extra">
+  <form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form inline-form" data-key="extra">
     {% csrf_token %}
     <input type="hidden" name="action" value="extra_time">
     <select name="attempt">{% for a in taking %}<option value="{{ a.pk }}">{{ a.user.username }}</option>{% endfor %}</select>
@@ -78,24 +78,26 @@
 {% endif %}
 
 {% if strike_rows %}
-<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="strikes" style="margin:12px 0;">
+<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form tool" data-key="strikes">
   {% csrf_token %}
   <input type="hidden" name="action" value="strikes">
-  <label>Strikes and the fullscreen rule for:
+  <label>Strikes and the fullscreen rule for
     <select name="attempt">{% for a in strike_rows %}<option value="{{ a.pk }}">{{ a.user.username }} ({% if a.strikes_off %}OFF{% else %}on, {{ a.strikes }} strike{{ a.strikes|pluralize }}{% endif %})</option>{% endfor %}</select>
   </label>
-  <select name="value"><option value="off">turn off</option><option value="on">turn on</option></select>
-  <button type="submit" class="btn">Apply</button>
+  <div class="cluster">
+    <select name="value"><option value="off">turn off</option><option value="on">turn on</option></select>
+    <button type="submit" class="btn">Apply</button>
+  </div>
   <small class="help-text">For a student who cannot use fullscreen, or whose assistive technology moves focus away from the page. Their screen is not locked to fullscreen and nothing counts against them; leaving the window is still written to the log.</small>
 </form>
 {% endif %}
 
 {% if taking and exam.mode == 'scheduled' %}
-<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="reset" style="margin:12px 0;"
+<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form tool" data-key="reset"
       onsubmit="return confirm('Clear the device lock for this student? The NEXT device that opens the exam will be accepted, so only do this if their own device is really gone.');">
   {% csrf_token %}
   <input type="hidden" name="action" value="reset_device">
-  <label>Student's device is gone, let a new one in:
+  <label>Student's device is gone, let a new one in
     <select name="attempt">{% for a in taking %}<option value="{{ a.pk }}">{{ a.user.username }}</option>{% endfor %}</select>
   </label>
   <button type="submit" class="btn">Reset device lock</button>
@@ -103,14 +105,14 @@
 {% endif %}
 
 {% if can_extend_all %}
-<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form" data-key="extendall" style="margin:12px 0;"
+<form method="post" action="{% url 'exam_detail' exam.pk %}" class="simple-form tool" data-key="extendall"
       onsubmit="return confirm('Give EVERYONE still taking the exam this extra time?');">
   {% csrf_token %}
   <input type="hidden" name="action" value="extend_all">
   <label>Emergency: extend for everyone
     <select name="minutes">{% for m in extend_minutes %}<option value="{{ m }}">{{ m }} min</option>{% endfor %}</select>
   </label>
-  <button type="submit" class="btn">Extend everyone</button>
+  <button type="submit" class="btn btn-danger">Extend everyone</button>
 </form>
 {% endif %}
 </div>

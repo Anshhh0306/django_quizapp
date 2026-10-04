@@ -1,29 +1,34 @@
 {% extends "base.html" %}
+{% block title %}{{ exam.title }} - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <div class="auth-form-container">
-    <h2>{{ exam.title }}</h2>
-    <p>
-      {% if exam.mode == 'scheduled' %}Scheduled exam, {{ exam.duration_minutes }} minutes. Your teacher starts it for everyone at the same time.
-      {% else %}Open exam: no timer.{% endif %}
-    </p>
+<div class="page page--narrow">
+  <div class="sheet stack">
+    <div>
+      <h1 class="h2">{{ exam.title }}</h1>
+      <p class="muted">
+        {% if exam.mode == 'scheduled' %}Scheduled exam, {{ exam.duration_minutes }} minutes. Your teacher starts it for everyone at the same time.
+        {% else %}Open exam: no timer.{% endif %}
+      </p>
+    </div>
 
-    <h3>Before you join</h3>
-    <ul>
-      <li>Your answers and the time you take are recorded.</li>
-      <li>Your teacher can see when you join, when you reconnect, and if another device tries to use your account, so they can review anything unusual.</li>
-      {% if exam.mode == 'scheduled' %}
-      <li><strong>This exam must be taken in fullscreen.</strong> Leaving the exam window (switching to another tab or window, minimizing, or leaving fullscreen) is recorded as a strike. The first two strikes are warnings and the third submits your exam automatically. When the exam opens you have 45 seconds to go fullscreen; after that it counts as a strike too, and staying away adds another strike every minute. Your teacher can look at what happened and let you continue. If you cannot use fullscreen, tell your teacher before the exam starts.</li>
-      {% endif %}
-      <li>Nothing is decided automatically. A person reviews any flag.</li>
-      <li><strong>Do not share your login or this link.</strong> Your exam is tied to this device. If another device uses your account, your exam can be paused and the attempt is reported to your teacher. This can affect your result.</li>
-    </ul>
+    <div>
+      <h2 class="h3">Before you join</h2>
+      <ul class="rules">
+        <li>Your answers and the time you take are recorded.</li>
+        <li>Your teacher can see when you join, when you reconnect, and if another device tries to use your account, so they can review anything unusual.</li>
+        {% if exam.mode == 'scheduled' %}
+        <li><strong>This exam must be taken in fullscreen.</strong> Leaving the exam window (switching to another tab or window, minimizing, or leaving fullscreen) is recorded as a strike. The first two strikes are warnings and the third submits your exam automatically. When the exam opens you have 45 seconds to go fullscreen; after that it counts as a strike too, and staying away adds another strike every minute. Your teacher can look at what happened and let you continue. If you cannot use fullscreen, tell your teacher before the exam starts.</li>
+        {% endif %}
+        <li>Nothing is decided automatically. A person reviews any flag.</li>
+        <li><strong>Do not share your login or this link.</strong> Your exam is tied to this device. If another device uses your account, your exam can be paused and the attempt is reported to your teacher. This can affect your result.</li>
+      </ul>
+    </div>
 
     <form method="post" class="simple-form">
       {% csrf_token %}
-      {% if error %}<div class="error">{{ error }}</div>{% endif %}
-      <label><input type="checkbox" name="agree"> I understand and agree.</label>
-      <button type="submit" class="btn btn-create">Join exam lobby</button>
+      {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+      <label><input type="checkbox" name="agree"> <span>I understand and agree.</span></label>
+      <button type="submit" class="btn btn-create btn-block">Join exam lobby</button>
     </form>
   </div>
 </div>

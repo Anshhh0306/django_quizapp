@@ -1,23 +1,23 @@
 {% extends "base.html" %}
+{% block title %}Turn on two-factor sign-in - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
+<div class="page">
   <div class="auth-form-container">
-    <h2>Turn on two-factor sign-in</h2>
+    <h1 class="h2">Turn on two-factor sign-in</h1>
     {% if required %}
-      <p style="background:#fff3cd;border:1px solid #e0c36a;padding:10px;border-radius:6px;font-size:.9rem;">
-        Your role needs this before you can use the site. It takes about two minutes.</p>
+      <p class="notice notice--warn">Your role needs this before you can use the site. It takes about two minutes.</p>
     {% else %}
       <p>With this on, a stolen or guessed password is not enough to use your account.</p>
     {% endif %}
 
-    <ol style="padding-left:1.2rem;line-height:1.6;">
+    <ol class="steps steps--long">
       <li>Install an authenticator app on your phone (for example Google Authenticator, Microsoft Authenticator or
           Authy), or a password manager that can make one-time codes.</li>
-      <li>In the app, add an account and scan this picture:<br>
-        <img src="{{ qr }}" alt="QR code to scan with your authenticator app" width="220" height="220" style="margin:8px 0;"><br>
-        Cannot scan? Type this key into the app instead (time-based):<br>
-        <code style="font-size:1.05rem;">{{ key }}</code></li>
-      <li>Type the 6-digit code the app now shows:</li>
+      <li>In the app, add an account and scan this picture.
+        <img src="{{ qr }}" alt="QR code to scan with your authenticator app" width="220" height="220" class="qr">
+        Cannot scan? Type this key into the app instead (time-based):
+        <code class="key">{{ key }}</code></li>
+      <li>Type the 6-digit code the app now shows.</li>
     </ol>
 
     <form method="post" class="simple-form">
@@ -26,12 +26,12 @@
       {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
       <div class="form-field">
         <label for="code">Code from the app</label>
-        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" autofocus required>
+        <input id="code" name="code" type="text" class="mono" inputmode="numeric" autocomplete="one-time-code" autofocus required>
       </div>
-      <button type="submit" class="btn btn-create">Turn on</button>
+      <button type="submit" class="btn btn-create btn-block">Turn on</button>
     </form>
 
-    <form action="{% url 'logout' %}" method="post" style="margin-top:14px;">
+    <form action="{% url 'logout' %}" method="post" class="auth-link">
       {% csrf_token %}
       <button type="submit" class="logout-btn">Log out</button>
     </form>

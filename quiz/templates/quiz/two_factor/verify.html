@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% block title %}Enter your code - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
+<div class="page">
   <div class="auth-form-container">
-    <h2>Enter your code</h2>
+    <h1 class="h2">Enter your code</h1>
     <p>Open your authenticator app and type the 6-digit code shown for <strong>SRMIST Quiz</strong>.
        Lost your phone? Type one of your recovery codes instead.</p>
 
@@ -12,16 +13,16 @@
       {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
       <div class="form-field">
         <label for="code">Code</label>
-        <input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" autofocus required>
+        <input id="code" name="code" type="text" class="mono" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" autofocus required>
       </div>
-      <p style="font-size:.9rem;">
-        <label><input type="checkbox" name="remember"> Remember this browser for {{ days }} days
-          (only on your own device: your password is still needed)</label>
-      </p>
-      <button type="submit" class="btn btn-create">Verify</button>
+      <label class="small">
+        <input type="checkbox" name="remember">
+        <span>Remember this browser for {{ days }} days (only on your own device: your password is still needed)</span>
+      </label>
+      <button type="submit" class="btn btn-create btn-block">Verify</button>
     </form>
 
-    <form action="{% url 'logout' %}" method="post" style="margin-top:14px;">
+    <form action="{% url 'logout' %}" method="post" class="auth-link">
       {% csrf_token %}
       <button type="submit" class="logout-btn">Not you? Log out</button>
     </form>

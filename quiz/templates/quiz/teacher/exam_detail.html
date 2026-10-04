@@ -1,55 +1,70 @@
 {% extends "base.html" %}
+{% block title %}{{ exam.title }} - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <h2>{{ exam.title }}</h2>
-  <p><a href="{% url 'teach_home' %}">Back</a> | <a href="{% url 'exam_results' exam.pk %}" class="btn btn-view">View results</a></p>
-  {% if messages %}{% for m in messages %}<div>{{ m }}</div>{% endfor %}{% endif %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>{{ exam.title }}</h1>
+      <p class="muted"><a href="{% url 'teach_home' %}">Back to teacher tools</a></p>
+    </div>
+    <a href="{% url 'exam_results' exam.pk %}" class="btn btn-view">View results</a>
+  </div>
+  {% for m in messages %}<p class="notice">{{ m }}</p>{% endfor %}
   {% if exam.owner_id != user.id %}
-  <p style="background:#fff3cd;padding:8px;"><strong>This exam belongs to {{ exam.owner.username }}.</strong> You are acting as administrator; what you do here is recorded in the activity log.</p>
+  <p class="notice notice--warn"><strong>This exam belongs to {{ exam.owner.username }}.</strong> You are acting as administrator; what you do here is recorded in the activity log.</p>
   {% endif %}
 
-  <p><strong>Exam link (share with students):</strong><br><code id="exam-link">{{ link }}</code>
-    <button type="button" class="btn btn-view" id="copy-link">Copy link</button></p>
-  <ul>
-    <li>Mode: {{ exam.get_mode_display }}{% if exam.duration_minutes %}, {{ exam.duration_minutes }} minutes{% endif %}</li>
-    <li>Questions: {{ question_count }}</li>
-  </ul>
+  <div class="sheet stack">
+    <div>
+      <strong>Exam link (share with students):</strong>
+      <div class="linkbox">
+        <code id="exam-link">{{ link }}</code>
+        <button type="button" class="btn btn-view btn-small" id="copy-link">Copy link</button>
+      </div>
+    </div>
+    <ul class="live-facts">
+      <li>Mode: {{ exam.get_mode_display }}{% if exam.duration_minutes %}, {{ exam.duration_minutes }} minutes{% endif %}</li>
+      <li>Questions: {{ question_count }}</li>
+    </ul>
 
-  {% if exam.status == 'draft' %}
-  <form method="post" class="simple-form">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="open">
-    <button type="submit" class="btn btn-create">Open for students</button>
-    <small class="help-text">Students can then use the link, accept the notice and wait in the lobby.</small>
-  </form>
-  {% endif %}
+    <div class="cluster">
+    {% if exam.status == 'draft' %}
+    <form method="post" class="simple-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="open">
+      <button type="submit" class="btn btn-create">Open for students</button>
+      <small class="help-text">Students can then use the link, accept the notice and wait in the lobby.</small>
+    </form>
+    {% endif %}
 
-  {% if exam.status == 'lobby' and exam.mode == 'scheduled' %}
-  <form method="post" class="simple-form" onsubmit="return confirm('Start the exam for everyone in the lobby? It cannot be undone.');">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="start">
-    <button type="submit" class="btn btn-create">Start exam (30 second countdown)</button>
-  </form>
-  {% endif %}
-  {% if phase == 'lobby' or phase == 'countdown' or phase == 'running' %}
-  <form method="post" class="simple-form" onsubmit="return confirm('End the exam now? Everyone\'s answers so far will be submitted.');">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="end">
-    <button type="submit" class="btn">{% if exam.mode == 'open' %}Close exam{% else %}End exam now{% endif %}</button>
-  </form>
-  {% endif %}
+    {% if exam.status == 'lobby' and exam.mode == 'scheduled' %}
+    <form method="post" class="simple-form" onsubmit="return confirm('Start the exam for everyone in the lobby? It cannot be undone.');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="start">
+      <button type="submit" class="btn btn-create">Start exam (30 second countdown)</button>
+    </form>
+    {% endif %}
+    {% if phase == 'lobby' or phase == 'countdown' or phase == 'running' %}
+    <form method="post" class="simple-form" onsubmit="return confirm('End the exam now? Everyone\'s answers so far will be submitted.');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="end">
+      <button type="submit" class="btn btn-danger">{% if exam.mode == 'open' %}Close exam{% else %}End exam now{% endif %}</button>
+    </form>
+    {% endif %}
+    </div>
+  </div>
 
   <div id="controls">{% include "quiz/teacher/_exam_controls.html" with exam=exam frozen=controls.frozen taking=controls.taking reopenable=controls.reopenable strike_rows=controls.strike_rows minutes=controls.minutes extend_minutes=controls.extend_minutes can_extend_all=controls.can_extend_all sig=controls.sig %}</div>
 
   <div id="live">{% include "quiz/teacher/_exam_live.html" %}</div>
 
   {% if phase == 'ended' %}
-  <p><em>This exam has ended. The class list and seats are locked. <a href="{% url 'exam_results' exam.pk %}">See the results.</a></em></p>
+  <p class="notice notice--ok">This exam has ended. The class list and seats are locked. <a href="{% url 'exam_results' exam.pk %}">See the results.</a></p>
   {% endif %}
 
   {% if not has_list and phase != 'ended' %}
-  <h3>Raise seat limit</h3>
-  <form method="post" class="simple-form">
+  <h2 class="h3 gap-top">Raise seat limit</h2>
+  <form method="post" class="simple-form inline-form">
     {% csrf_token %}
     <input type="hidden" name="action" value="seats">
     <input type="number" name="seat_limit" min="{{ exam.seat_limit|add:1 }}" value="{{ exam.seat_limit|add:1 }}">
@@ -57,18 +72,19 @@
   </form>
   {% endif %}
 
-  <h3>Class list ({{ allowed|length }})</h3>
+  <h2 class="h3 gap-top">Class list ({{ allowed|length }})</h2>
   {% if allowed %}
     <p>Only these students can enter, and each one automatically has a seat. Who has joined is shown above.</p>
   {% else %}
     <p>No class list: anyone with the link can enter, up to the seat limit.</p>
   {% endif %}
   {% if phase != 'ended' %}
-  <form method="post" enctype="multipart/form-data" class="simple-form">
+  <form method="post" enctype="multipart/form-data" class="simple-form sheet">
     {% csrf_token %}
     <input type="hidden" name="action" value="allow">
     <textarea name="students" rows="4" placeholder="AD3919, AB1234 ..."></textarea>
-    <p>Or upload a file (CSV or Excel): <input type="file" name="students_file" accept=".csv,.xlsx"> Template: <a href="{% url 'student_template' %}">CSV</a> | <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
+    <p>Or upload a file (CSV or Excel): <input type="file" name="students_file" accept=".csv,.xlsx"></p>
+    <p class="small muted">Template: <a href="{% url 'student_template' %}">CSV</a> or <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
     <button type="submit" class="btn btn-create">Add students</button>
   </form>
   {% endif %}

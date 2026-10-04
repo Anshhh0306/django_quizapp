@@ -1,67 +1,14 @@
 {% extends "base.html" %}
-
+{% block title %}Account ready - QuizHub{% endblock %}
 {% block content %}
-<div class="verification-success">
-    <div class="success-icon">✓</div>
-    <h2>Your account is ready!</h2>
-    <p>Your SRMIST email address is verified and your password is saved. You can now log in.</p>
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">Your account is ready</h1>
+    <p>Your college email address is verified and your password is saved. You can now sign in.</p>
     {% if pending_teacher %}
-    <p>Staff accounts must be approved by an administrator before you can create exams.</p>
+    <p class="notice notice--warn">Staff accounts must be approved by an administrator before you can create exams.</p>
     {% endif %}
-    <div class="action-buttons">
-        <a href="{% url 'login' %}" class="login-btn">Log In</a>
-    </div>
+    <a href="{% url 'login' %}" class="btn btn-create login-btn">Sign in</a>
+  </div>
 </div>
-
-<style>
-.verification-success {
-    max-width: 500px;
-    margin: 3rem auto;
-    padding: 2rem;
-    text-align: center;
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-.success-icon {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 1.5rem;
-    background: #4caf50;
-    color: white;
-    border-radius: 50%;
-    font-size: 3rem;
-    line-height: 80px;
-    text-align: center;
-}
-
-.verification-success h2 {
-    color: #2c3e50;
-    margin-bottom: 1rem;
-}
-
-.verification-success p {
-    color: #666;
-    margin-bottom: 2rem;
-}
-
-.action-buttons {
-    margin-top: 2rem;
-}
-
-.login-btn {
-    display: inline-block;
-    padding: 0.8rem 2rem;
-    background: #1976d2;
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    transition: background-color 0.3s;
-}
-
-.login-btn:hover {
-    background: #1565c0;
-}
-</style>
 {% endblock %}

@@ -1,12 +1,21 @@
 {% extends "base.html" %}
+{% block title %}Results: {{ exam.title }} - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <h2>Results: {{ exam.title }}</h2>
-  <p><a href="{% url 'exam_detail' exam.pk %}">Back to exam</a>
-     | Download: <a href="{% url 'exam_results' exam.pk %}?format=csv">CSV</a> | <a href="{% url 'exam_results' exam.pk %}?format=xlsx">Excel</a></p>
-  {% if phase != 'ended' %}<p><em>The exam is still {{ phase }}. These numbers are live and will change.</em></p>{% endif %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Results: {{ exam.title }}</h1>
+      <p class="muted"><a href="{% url 'exam_detail' exam.pk %}">Back to exam</a></p>
+    </div>
+    <div class="cluster">
+      <span class="small muted">Download</span>
+      <a href="{% url 'exam_results' exam.pk %}?format=csv" class="btn btn-view btn-small">CSV</a>
+      <a href="{% url 'exam_results' exam.pk %}?format=xlsx" class="btn btn-view btn-small">Excel</a>
+    </div>
+  </div>
+  {% if phase != 'ended' %}<p class="notice notice--warn">The exam is still {{ phase }}. These numbers are live and will change.</p>{% endif %}
 
-  <ul>
+  <ul class="live-facts">
     <li>Submitted: <strong>{{ summary.submitted }}</strong> of {{ summary.class_size }} {% if exam.allowed.exists %}on the class list{% else %}who joined{% endif %}</li>
     {% if summary.frozen %}<li><strong>Frozen, waiting for you: {{ summary.frozen }}</strong></li>{% endif %}
     {% if summary.in_progress %}<li>Still answering: {{ summary.in_progress }}</li>{% endif %}
@@ -15,30 +24,32 @@
     {% if summary.average is not None %}<li>Average: {{ summary.average }}%, highest {{ summary.highest }}%, lowest {{ summary.lowest }}%</li>{% endif %}
   </ul>
 
-  <table border="1" cellpadding="6" style="border-collapse:collapse;width:100%;">
-    <thead>
-      <tr><th>Student</th><th>Status</th><th>Score</th><th>%</th><th>Correct</th><th>Wrong</th><th>Unanswered</th><th>Time</th><th>Reconnects</th><th>Strikes</th><th>Left window</th><th></th></tr>
-    </thead>
-    <tbody>
-    {% for r in rows %}
-      <tr>
-        <td>{{ r.name }}</td>
-        <td>{{ r.status }}</td>
-        <td>{% if r.score is not None and r.status == 'Submitted' %}{{ r.score }} / {{ r.total }}{% else %}&ndash;{% endif %}</td>
-        <td>{% if r.percent is not None %}{{ r.percent }}%{% else %}&ndash;{% endif %}</td>
-        <td>{% if r.right is not None %}{{ r.right }}{% else %}&ndash;{% endif %}</td>
-        <td>{% if r.wrong is not None %}{{ r.wrong }}{% else %}&ndash;{% endif %}</td>
-        <td>{% if r.unanswered is not None %}{{ r.unanswered }}{% else %}&ndash;{% endif %}</td>
-        <td>{{ r.minutes|default:"&ndash;" }}</td>
-        <td>{{ r.rejoins|default:"" }}</td>
-        <td>{{ r.strikes|default:"" }}{% if r.auto %} <small>(auto-submitted)</small>{% endif %}</td>
-        <td>{{ r.leaves|default:"" }}</td>
-        <td>{% if r.attempt and r.attempt.started_at %}<a href="{% url 'exam_result_detail' exam.pk r.attempt.pk %}">View answers</a>{% endif %}</td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="12">Nobody has joined yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap table-wrap--sticky">
+    <table>
+      <thead>
+        <tr><th>Student</th><th>Status</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Unanswered</th><th class="num">Time</th><th class="num">Reconnects</th><th class="num">Strikes</th><th class="num">Left window</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r.name }}</td>
+          <td>{{ r.status }}</td>
+          <td class="num">{% if r.score is not None and r.status == 'Submitted' %}{{ r.score }} / {{ r.total }}{% else %}&ndash;{% endif %}</td>
+          <td class="num">{% if r.percent is not None %}{{ r.percent }}%{% else %}&ndash;{% endif %}</td>
+          <td class="num">{% if r.right is not None %}{{ r.right }}{% else %}&ndash;{% endif %}</td>
+          <td class="num">{% if r.wrong is not None %}{{ r.wrong }}{% else %}&ndash;{% endif %}</td>
+          <td class="num">{% if r.unanswered is not None %}{{ r.unanswered }}{% else %}&ndash;{% endif %}</td>
+          <td class="num">{{ r.minutes|default:"&ndash;" }}</td>
+          <td class="num">{{ r.rejoins|default:"" }}</td>
+          <td class="num">{{ r.strikes|default:"" }}{% if r.auto %} <small>(auto-submitted)</small>{% endif %}</td>
+          <td class="num">{{ r.leaves|default:"" }}</td>
+          <td>{% if r.attempt and r.attempt.started_at %}<a href="{% url 'exam_result_detail' exam.pk r.attempt.pk %}">View answers</a>{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="12">Nobody has joined yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

@@ -1,9 +1,13 @@
 {% extends "base.html" %}
+{% block title %}Create exam - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <h2>Create exam</h2>
+<div class="page page--narrow">
+  <div class="page-head">
+    <h1>Create exam</h1>
+    <a href="{% url 'teach_home' %}">Back to teacher tools</a>
+  </div>
   {% if not has_questions %}
-    <p>You have no questions to pick from yet. <a href="{% url 'question_bank' %}">Upload a set first</a> (or bring back a hidden one).</p>
+    <p class="notice">You have no questions to pick from yet. <a href="{% url 'question_bank' %}">Upload a set first</a> (or bring back a hidden one).</p>
   {% else %}
   <form method="post" enctype="multipart/form-data" class="simple-form" id="exam-form">
     {% csrf_token %}
@@ -11,20 +15,20 @@
       <div class="form-field">
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {% if field.name == 'questions' %}
-          <div style="position:sticky;top:0;z-index:1;background:#fff;padding:6px 0;border-bottom:1px solid #ddd;">
+          <div class="pick-bar">
             Selected: <strong id="pick-count">0</strong> question(s), <strong id="pick-marks">0</strong> marks
           </div>
           {% for group in form.question_sets %}
-          <details class="pick-set" style="margin:8px 0;border:1px solid #bbb;padding:6px 10px;"{% if forloop.first or group.picked %} open{% endif %}>
+          <details class="pick-set"{% if forloop.first or group.picked %} open{% endif %}>
             <summary><strong>{{ group.name }}</strong> &mdash; {{ group.count }} question(s), {{ group.marks }} marks
-              <span style="color:#666;">(<span class="set-picked">0</span> selected)</span></summary>
-            <p style="margin:6px 0;"><a href="#" class="select-set" style="font-size:.85rem;">select whole set / none</a></p>
+              <span class="muted">(<span class="set-picked">0</span> selected)</span></summary>
+            <p><a href="#" class="select-set small">select whole set / none</a></p>
             {% for marks, items in group.sections %}
-            <fieldset data-marks="{{ marks }}" style="margin:8px 0;border:1px solid #ccc;padding:8px;">
+            <fieldset data-marks="{{ marks }}" class="pick-section">
               <legend><strong>{{ marks }}-mark questions ({{ items|length }})</strong>
-                <a href="#" class="select-all" style="font-size:.85rem;margin-left:8px;">select all / none</a></legend>
+                <a href="#" class="select-all small">select all / none</a></legend>
               {% for number, box in items %}
-                <div>{{ number }}. {{ box.tag }} <label for="{{ box.id_for_label }}">{{ box.choice_label }}</label></div>
+                <div class="pick-item"><span class="pick-no">{{ number }}.</span> {{ box.tag }} <label for="{{ box.id_for_label }}">{{ box.choice_label }}</label></div>
               {% endfor %}
             </fieldset>
             {% endfor %}
@@ -41,8 +45,7 @@
     <button type="submit" class="btn btn-create">Create exam</button>
   </form>
   {% endif %}
-  <p>Student list template: <a href="{% url 'student_template' %}">CSV</a> | <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
-  <p><a href="{% url 'teach_home' %}">Back</a></p>
+  <p class="muted gap-top">Student list template: <a href="{% url 'student_template' %}">CSV</a> or <a href="{% url 'student_template' %}?format=xlsx">Excel</a></p>
 </div>
 {% if has_questions %}
 <script>

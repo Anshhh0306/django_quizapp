@@ -1,21 +1,22 @@
 {% extends "base.html" %}
+{% block title %}{{ exam.title }} - QuizHub{% endblock %}
 {% block content %}
-<div class="container">
-  <div class="auth-form-container">
-    <h2>{{ exam.title }}</h2>
+<div class="page page--narrow">
+  <div class="sheet stack">
+    <h1 class="h2">{{ exam.title }}</h1>
     {% if not started %}
       <p>You did not start this exam.</p>
     {% else %}
       {% if by_strikes %}
-        <p><strong>Your exam was submitted automatically</strong> because you collected {{ max_strikes }} strikes for leaving the exam window. Your answers so far are saved. Your teacher can look at what happened and decide whether you may continue.</p>
-        <p id="waiting"><em>Keep this page open. If your teacher lets you continue, you will be taken back to your exam.</em></p>
+        <p class="notice notice--error"><strong>Your exam was submitted automatically</strong> because you collected {{ max_strikes }} strikes for leaving the exam window. Your answers so far are saved. Your teacher can look at what happened and decide whether you may continue.</p>
+        <p id="waiting" class="muted"><em>Keep this page open. If your teacher lets you continue, you will be taken back to your exam.</em></p>
       {% else %}
-        <p>Your exam has been submitted{% if attempt.submitted_at %} at {{ attempt.submitted_at|time:"H:i" }}{% endif %}. Your answers are saved.</p>
+        <p class="notice notice--ok">Your exam has been submitted{% if attempt.submitted_at %} at {{ attempt.submitted_at|time:"H:i" }}{% endif %}. Your answers are saved.</p>
       {% endif %}
       {% if show_score %}
-        <h3>Your score: {{ attempt.score }} / {{ attempt.total_points }}</h3>
-        <h4>Your answers</h4>
-        <ol>{% for question, choice in selections %}<li>{{ question }}<br><em>{{ choice }}</em></li>{% endfor %}</ol>
+        <h2 class="score">Your score: {{ attempt.score }} / {{ attempt.total_points }}</h2>
+        <h2 class="h3">Your answers</h2>
+        <ol class="answers">{% for question, choice in selections %}<li>{{ question }}<br><em>{{ choice }}</em></li>{% endfor %}</ol>
       {% else %}
         <p>Your score will be shown here after the exam has ended for everyone.</p>
       {% endif %}

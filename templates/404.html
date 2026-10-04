@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Page not found - QuizHub{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">Page not found</h1>
+    <p>That address doesn't lead anywhere. If you followed an exam link, check that you copied all of it, or ask your teacher to send it again.</p>
+    <a href="{% url 'home' %}" class="btn btn-create">Back to home</a>
+  </div>
+</div>
+{% endblock %}
