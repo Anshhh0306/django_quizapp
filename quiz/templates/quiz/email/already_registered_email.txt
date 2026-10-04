@@ -1,0 +1,14 @@
+Hello,
+
+Someone (maybe you) tried to register this email address on the SRMIST Quiz Platform, but it already has an account.
+
+If it was you, log in here:
+{{ login_url }}
+
+If you forgot your password, reset it here:
+{{ reset_url }}
+
+If it was not you, ignore this email: nothing has changed and nobody can log in as you.
+
+Best regards,
+Quiz Platform Team

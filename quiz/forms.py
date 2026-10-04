@@ -5,6 +5,7 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.hashers import UNUSABLE_PASSWORD_PREFIX
 from django.core.exceptions import ValidationError
 from .exams import parse_allowed, read_student_list, read_upload
+from .lock_alert import alert_owner
 from .models import Exam, Question
 from .ratelimit import login_blocked, login_failed, login_succeeded
 from .roles import STUDENT_RE, STAFF_RE
@@ -24,6 +25,7 @@ class RegisterForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.pending = None
+        self.taken = False  # an account (or its login name) already exists: the page must not say so, the owner is emailed
         self.fields['email'].help_text = "Students: AD3919@srmist.edu.in. Staff: name@srmist.edu.in (needs admin approval)."
 
     def clean_email(self):
@@ -32,9 +34,8 @@ class RegisterForm(forms.Form):
             raise ValidationError(
                 "Use your SRMIST email: students like AD3919@srmist.edu.in, staff like name@srmist.edu.in")
         self.pending = pending_account(email)  # registering again just sends the verification email again
-        if not self.pending and (User.objects.filter(email__iexact=email).exists()
-                                 or User.objects.filter(username__iexact=email.split('@')[0]).exists()):
-            raise ValidationError("This email address is already registered. Try logging in, or reset your password.")
+        self.taken = not self.pending and (User.objects.filter(email__iexact=email).exists()
+                                           or User.objects.filter(username__iexact=email.split('@')[0]).exists())
         return email
 
     def save(self):
@@ -48,17 +49,26 @@ class RegisterForm(forms.Form):
 
 
 class LoginThrottleMixin:
-    """Locks a login for 15 minutes after repeated wrong passwords (counted per account+address, and per address)."""
+    """Locks a login for a short, growing time after repeated wrong passwords (counted per account, and per address).
+    While locked the page greys out the password box and counts down (`locked_for`); the SERVER is what enforces the lock."""
+    locked_for = 0  # seconds left when this form was refused because of a lock
 
     def clean(self):
         username = self.cleaned_data.get('username', '')
         ip = self.request.META.get('REMOTE_ADDR') if getattr(self, 'request', None) else None
-        if login_blocked(username, ip):
-            raise ValidationError('Too many failed login attempts. Please wait 15 minutes and try again.', code='locked')
+        wait = login_blocked(username, ip)
+        if wait:
+            self.locked_for = wait
+            self.fields['password'].widget.attrs['disabled'] = True
+            minutes = -(-wait // 60)  # rounded up
+            raise ValidationError(f'Too many failed login attempts. Please wait {minutes} minute{"s" if minutes != 1 else ""} '
+                                  'and try again, or reset your password.', code='locked')
         try:
             cleaned = super().clean()
         except ValidationError:
-            login_failed(username, ip)
+            locked_for = login_failed(username, ip)  # seconds, if this wrong password started a lock
+            if locked_for and getattr(self, 'request', None):
+                alert_owner(self.request, username, locked_for)
             raise
         login_succeeded(username, ip)
         return cleaned

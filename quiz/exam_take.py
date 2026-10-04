@@ -12,6 +12,7 @@ from .exam_device import bind_device, check_device
 from .exam_integrity import (CLIENT_KINDS, ENTER_SECONDS, MAX_STRIKES, STRIKES,
                              applies, enforce, record_back, record_leave, start_watching)
 from .exam_run import begin_attempt, finalize, is_closed, scores_visible, shuffled_choices
+from .ratelimit import user_rate_limit
 from .util import to_int
 from .exam_views import _attempt, _ms, _notice, mobile_blocked
 from .models import DEVICE_TAG, Choice, Exam, ExamAnswer, ExamAttempt, Question
@@ -97,6 +98,7 @@ def exam_take(request, token):
 @never_cache
 @login_required
 @require_POST
+@user_rate_limit('answer', 180, 60)  # the page saves one answer per click; a person cannot click this fast
 def exam_answer(request, token):
     """Autosave one answer. The browser calls this on every click and retries if the wifi drops."""
     exam = get_object_or_404(Exam, token=token)
@@ -152,6 +154,7 @@ def exam_submit(request, token):
 
 @never_cache
 @login_required
+@user_rate_limit('ping', 30, 60)  # the page asks every 8 seconds
 def exam_ping(request, token):
     """The exam page asks every few seconds: still ok? frozen? new deadline? Also how a frozen page learns it was released."""
     exam = get_object_or_404(Exam, token=token)
@@ -175,6 +178,7 @@ def exam_ping(request, token):
 @never_cache
 @login_required
 @require_POST
+@user_rate_limit('event', 60, 60)  # one report per leave or return, de-duplicated by the server anyway
 def exam_event(request, token):
     """The exam page reports that the exam window was left ('hidden', 'blur', 'fullscreen') or that the student is back."""
     exam = get_object_or_404(Exam, token=token)

@@ -1,0 +1,11 @@
+Hello {{ user.username }},
+
+At {{ when|date:"H:i" }} (IST) the wrong password was entered {{ tries }} times for your SRMIST Quiz Platform account, so the account is locked for {{ minutes }} minute{{ minutes|pluralize }}.
+
+If that was you: wait and try again, or reset your password here:
+{{ reset_url }}
+
+If it was NOT you: someone may be trying to guess your password. Nobody has got in; the lock only means their guesses were refused. Please reset your password now at the link above and choose one nobody could guess.
+
+Best regards,
+Quiz Platform Team
