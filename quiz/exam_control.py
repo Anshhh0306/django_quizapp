@@ -14,7 +14,9 @@ EXTEND_ALL_MINUTES = (5, 10, 15, 20, 30)
 
 
 def _locked(attempt):
-    return ExamAttempt.objects.select_for_update().select_related('exam', 'user').get(pk=attempt.pk)
+    # of=('self',): lock the seat only. A plain FOR UPDATE would also lock the joined exam and user rows, and a
+    # teacher's lock on the exam could then deadlock with a student's save (PostgreSQL ends one of the two requests).
+    return ExamAttempt.objects.select_for_update(of=('self',)).select_related('exam', 'user').get(pk=attempt.pk)
 
 
 def unfreeze(attempt, keep, minutes, actor):

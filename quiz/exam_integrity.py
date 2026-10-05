@@ -64,7 +64,7 @@ def record_leave(attempt, kind, now=None):
     """The page says the exam window was left. Returns (the attempt as it is now, whether this report counted)."""
     now = now or timezone.now()
     with transaction.atomic():
-        a = ExamAttempt.objects.select_for_update().select_related('exam', 'user').get(pk=attempt.pk)
+        a = ExamAttempt.objects.select_for_update(of=('self',)).select_related('exam', 'user').get(pk=attempt.pk)
         if a.submitted_at or a.exam.mode != Exam.SCHEDULED:
             return a, False
         if a.last_leave_at and now - a.last_leave_at < timedelta(seconds=DEDUPE_SECONDS):

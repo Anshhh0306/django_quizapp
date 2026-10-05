@@ -18,23 +18,28 @@ cd django_quizapp
 python -m venv .venv
 .venv\Scripts\activate          # Linux / macOS: source .venv/bin/activate
 pip install -r requirements.txt
-copy .env.example .env          # Linux / macOS: cp .env.example .env
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Then open http://127.0.0.1:8000/. Without a mail password in `.env`, the emails (verification links, resets) are printed in the terminal instead of being sent.
+Then open http://127.0.0.1:8000/. You need no `.env` file on your computer. Without a mail password, the emails (verification links, resets) are printed in the terminal instead of being sent.
 
 ## Settings
 
-All settings come from environment variables or `.env`. See `.env.example`. On a real server, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False` and `DJANGO_ALLOWED_HOSTS` are all required or the site refuses to start. Never commit `.env`: it holds the mail password.
+Settings come from environment variables or a file called `.env`. `.env.example` lists them all, switched off: copy only the lines you need. On a real server, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False` and `DJANGO_ALLOWED_HOSTS` are all required or the site refuses to start. Never commit `.env`: it holds passwords.
+
+## Database
+
+The site uses the SQLite file `db.sqlite3` unless `DATABASE_URL` is set, for example `postgres://USER:PASSWORD@HOST:5432/DATABASE`. That is how the live site uses PostgreSQL.
 
 ## Tests
 
 ```
 python manage.py test
 ```
+
+They run on SQLite. To run them on a local PostgreSQL, set `TEST_DATABASE_URL` (same format, for example `postgres://postgres:PASSWORD@localhost:5432/quizhub`): Django makes and removes its own `test_` database. `manage.py test` ignores `DATABASE_URL`, so a test run can never touch the live database.
 
 ## Locked out of two-factor?
 
