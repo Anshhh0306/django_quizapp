@@ -55,6 +55,22 @@ python manage.py test
 
 They run on the database named by `TEST_DATABASE_URL`. On your own computer the same address as `DATABASE_URL` is fine, because Django makes and removes its own `test_` database. `manage.py test` ignores `DATABASE_URL`, so a test run can never touch the live database.
 
+## Demo data
+
+To try the site with 50 students, two teachers and a superadmin, or to test it hard, fill a **separate, empty** database with made-up accounts. The command refuses to run when the database is not on your computer, when real email is switched on, or when the database already holds any other account, so it cannot touch anything real.
+
+In psql make the database (`CREATE DATABASE quizhub_demo;`), then in a PowerShell window (these settings last only for that window; on Linux or macOS use `export NAME=value`):
+
+```
+$env:DATABASE_URL = 'postgres://postgres:YOUR_PASSWORD@localhost:5432/quizhub_demo'
+$env:EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
+python manage.py migrate
+python manage.py seed_demo
+python manage.py runserver
+```
+
+`seed_demo` prints the password all demo accounts share (a new random one each run; choose your own with `--password`), the exam links, and the authenticator key of the superadmin (`demo.admin`) and the teachers (`demo.teacher1`, `demo.teacher2`). Students are `zz0001` to `zz0050`. For the code step of a staff sign-in, `python manage.py seed_demo --code demo.teacher1` prints the current code. Running the command again keeps the data and gives everyone a new password and key.
+
 ## Locked out of two-factor?
 
 A superadmin who has lost both their phone and their recovery codes can be let back in from the server:
