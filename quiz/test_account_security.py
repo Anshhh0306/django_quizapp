@@ -441,7 +441,7 @@ class SettingsFailClosedTests(TestCase):
         if (root / '.env').exists():
             self.skipTest('a local .env file would change these results')
         clean = {k: v for k, v in os.environ.items() if not k.startswith('DJANGO_')}
-        clean.update(env)
+        clean.update({'DATABASE_URL': 'postgres://u:p@localhost:5432/x', **env})  # settings only parse it; nothing connects
         code = ('import sys, os; sys.argv=[%r]; os.environ["DJANGO_SETTINGS_MODULE"]="quiz_project.settings"; '
                 'from django.conf import settings; print("OK", settings.DEBUG, settings.ALLOWED_HOSTS)' % argv0)
         r = subprocess.run([sys.executable, '-c', code], env=clean, cwd=root, capture_output=True, text=True)
@@ -457,7 +457,7 @@ class SettingsFailClosedTests(TestCase):
         out = self.settings_result('gunicorn', DJANGO_SECRET_KEY='k' * 50, DJANGO_ALLOWED_HOSTS='quiz.example.edu')
         self.assertEqual(out, "OK False ['quiz.example.edu']")
 
-    def test_local_commands_still_work_without_any_setup(self):
+    def test_local_commands_need_nothing_but_a_database_address(self):
         out = self.settings_result('manage.py')
         self.assertEqual(out, "OK True ['localhost', '127.0.0.1', '[::1]']")
 

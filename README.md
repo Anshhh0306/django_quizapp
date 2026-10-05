@@ -12,26 +12,40 @@ A Django site for running class tests. Teachers build a test from a CSV or Excel
 
 ## Run it on your computer
 
+You need Python and PostgreSQL (https://www.postgresql.org/download/) with an empty database, for example `CREATE DATABASE quizhub;` in psql.
+
 ```
 git clone https://github.com/Anshhh0306/django_quizapp.git
 cd django_quizapp
 python -m venv .venv
 .venv\Scripts\activate          # Linux / macOS: source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+Make a file called `.env` next to `manage.py` with your database address (a password with symbols must be written percent-encoded: `@` becomes `%40`):
+
+```
+DATABASE_URL=postgres://postgres:YOUR_PASSWORD@localhost:5432/quizhub
+TEST_DATABASE_URL=postgres://postgres:YOUR_PASSWORD@localhost:5432/quizhub
+```
+
+Then:
+
+```
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Then open http://127.0.0.1:8000/. You need no `.env` file on your computer. Without a mail password, the emails (verification links, resets) are printed in the terminal instead of being sent.
+Then open http://127.0.0.1:8000/. Without a mail password, the emails (verification links, resets) are printed in the terminal instead of being sent.
 
 ## Settings
 
-Settings come from environment variables or a file called `.env`. `.env.example` lists them all, switched off: copy only the lines you need. On a real server, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False` and `DJANGO_ALLOWED_HOSTS` are all required or the site refuses to start. Never commit `.env`: it holds passwords.
+Settings come from environment variables or a file called `.env`. `.env.example` lists them all; the three that only a real server needs are switched off. Copy the lines you need. On a real server, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False` and `DJANGO_ALLOWED_HOSTS` are all required or the site refuses to start. Never commit `.env`: it holds passwords.
 
 ## Database
 
-The site uses the SQLite file `db.sqlite3` unless `DATABASE_URL` is set, for example `postgres://USER:PASSWORD@HOST:5432/DATABASE`. That is how the live site uses PostgreSQL.
+PostgreSQL only. `DATABASE_URL` (for example `postgres://USER:PASSWORD@HOST:5432/DATABASE`) names the database, and the site refuses to start without it, so a live server that forgot it stops instead of quietly starting on an empty database.
 
 ## Tests
 
@@ -39,7 +53,7 @@ The site uses the SQLite file `db.sqlite3` unless `DATABASE_URL` is set, for exa
 python manage.py test
 ```
 
-They run on SQLite. To run them on a local PostgreSQL, set `TEST_DATABASE_URL` (same format, for example `postgres://postgres:PASSWORD@localhost:5432/quizhub`): Django makes and removes its own `test_` database. `manage.py test` ignores `DATABASE_URL`, so a test run can never touch the live database.
+They run on the database named by `TEST_DATABASE_URL`. On your own computer the same address as `DATABASE_URL` is fine, because Django makes and removes its own `test_` database. `manage.py test` ignores `DATABASE_URL`, so a test run can never touch the live database.
 
 ## Locked out of two-factor?
 
