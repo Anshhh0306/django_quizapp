@@ -97,7 +97,7 @@ def _other_device(attempt, device, label, ip, now):
     """A browser that is not the locked one. Decided on a freshly locked copy of the seat, because the copy the
     request loaded may be stale (the teacher can unfreeze or turn this very browser away at the same moment)."""
     with transaction.atomic():
-        a = ExamAttempt.objects.select_for_update().select_related('exam', 'user').get(pk=attempt.pk)
+        a = ExamAttempt.objects.select_for_update(of=('self',)).select_related('exam', 'user').get(pk=attempt.pk)
         attempt.frozen_at = a.frozen_at
         if a.device_id == device:  # the teacher has just handed the seat to this browser
             return 'frozen' if a.frozen_at else 'ok'

@@ -54,7 +54,7 @@ def begin_attempt(attempt, now=None):
     """First time the student reaches the questions: shuffle once, start their clock. Idempotent."""
     now = now or timezone.now()
     with transaction.atomic():
-        a = ExamAttempt.objects.select_for_update().select_related('exam').get(pk=attempt.pk)
+        a = ExamAttempt.objects.select_for_update(of=('self',)).select_related('exam').get(pk=attempt.pk)
         if a.started_at is None:
             a.question_ids = sectioned_order(a.exam.questions.values_list('id', 'points'))
             a.started_at = now
