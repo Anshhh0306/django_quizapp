@@ -88,32 +88,9 @@
           </div>
           {% endfor %}
         </div>
-      {% elif not categories %}
+      {% else %}
         <div class="page-head"><h1>Your exams</h1></div>
         <p>You have no exams yet. When your teacher shares an exam link, open it to join.</p>
-      {% endif %}
-
-      {% if categories %}
-        <h2>Available Quizzes</h2>
-        <p>Choose a category and start.</p>
-        <div class="rows">
-          {% for category in categories %}
-            {% with question_count=category.questions.count %}
-            <div class="row">
-              <div class="row__main">
-                <h3 class="row__title">{{ category.name }}</h3>
-                <p class="row__meta">{{ category.description }}</p>
-                {% if question_count > 0 %}<p class="row__meta">{{ question_count }} questions{% if category.completed %}. Score: {{ category.score }}/{{ category.total_questions }}{% endif %}</p>
-                {% else %}<p class="row__meta">No questions available in this category yet.</p>{% endif %}
-              </div>
-              {% if question_count > 0 %}
-                {% if category.completed %}<a href="{% url 'view_results' category.id %}" class="btn btn-view row__action">View Results</a>
-                {% else %}<a href="{% url 'anti_cheat_warning' category.id %}" class="btn btn-start row__action">Start Quiz</a>{% endif %}
-              {% endif %}
-            </div>
-            {% endwith %}
-          {% endfor %}
-        </div>
       {% endif %}
     {% endif %}
   {% endif %}

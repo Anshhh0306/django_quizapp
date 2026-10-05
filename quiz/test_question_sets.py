@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from quiz.exams import QUESTION_ROWS
 from quiz.forms import ExamForm
-from quiz.models import Category, Choice, Exam, ExamAnswer, ExamAttempt, Question, QuestionSet
+from quiz.models import Choice, Exam, ExamAnswer, ExamAttempt, Question, QuestionSet
 from quiz.question_sets import clean_set_name, create_set, name_for_upload, unique_name
 from quiz.test_exams import GOOD_CSV, PASSWORD, TeacherBase, xlsx
 
@@ -391,7 +391,7 @@ class EarlierUploadsMigrationTests(TestCase):
             Question.objects.create(text=f'a{i}', owner=a)
         Question.objects.create(text='b loose', owner=b)
         kept = make_set(b, 'Kept', marks=(1,))
-        quiz_question = Question.objects.create(text='old quiz', category=Category.objects.create(name='Python'))
+        no_owner = Question.objects.create(text='no teacher')
 
         self.run_migration()
 
@@ -400,8 +400,8 @@ class EarlierUploadsMigrationTests(TestCase):
         self.assertEqual(sorted(b.question_sets.values_list('name', flat=True)), ['Earlier uploads', 'Kept'])
         self.assertEqual(b.question_sets.get(name='Earlier uploads').questions.get().text, 'b loose')
         self.assertEqual(kept.questions.count(), 1)  # a question already in a set stays where it is
-        quiz_question.refresh_from_db()
-        self.assertIsNone(quiz_question.question_set)  # the old per-category quiz has no teacher and no set
+        no_owner.refresh_from_db()
+        self.assertIsNone(no_owner.question_set)  # a question with no teacher has no set
         self.assertFalse(c.question_sets.exists())
 
         self.run_migration()  # running it again changes nothing

@@ -25,14 +25,7 @@ urlpatterns = [
     ), name='password_reset_done'),
     path('accounts/reset/<uidb64>/<token>/', views.custom_password_reset_confirm, name='password_reset_confirm'),
     path('accounts/reset/done/', views.password_reset_complete, name='password_reset_complete'),
-    path('anti-cheat-warning/<int:category_id>/', views.anti_cheat_warning, name='anti_cheat_warning'),
-    path('start/<int:category_id>/', views.start_quiz, name='start_quiz'),
-    path('results/<int:category_id>/', views.view_results, name='view_results'),
-    path('review/<int:category_id>/', views.quiz_review, name='quiz_review'),
     path('profile/', views.user_profile, name='user_profile'),
-    path('question/', views.question_view, name='question'),
-    path('result/', views.result, name='result'),
-    path('already/', views.already_taken, name='already_taken'),
 
     # Teacher tools and exam links
     path('teach/', teacher_views.teach_home, name='teach_home'),
