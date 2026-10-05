@@ -1,140 +1,45 @@
-# 🎯 QuizHub - Django Quiz Platform (`django_quizapp`)
+# QuizHub
 
-A feature-packed, secure Django web application designed for interactive quizzes, anti-cheat test taking, user analytics, and email-verified institutional accounts.
+A Django site for running class tests. Teachers build a test from a CSV or Excel file, share one link, and follow it live. Students open the link, sign in with their college email, and take it.
 
-![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)
-![Django Version](https://img.shields.io/badge/django-5.2-green.svg)
-![Tests](https://img.shields.io/badge/tests-17%20passed-brightgreen.svg)
-![License](https://img.shields.io/badge/license-MIT-purple.svg)
+## What it does
 
----
+- **Accounts**: students register with an `@srmist.edu.in` address and confirm it by email. Teachers register the same way and wait for a superadmin to approve them.
+- **Tests**: a teacher uploads questions, picks the ones to use, sets a seat limit and an optional class list, and shares the link. A test is either *scheduled* (the teacher starts it, with a fixed time) or *open* (anytime, no timer).
+- **Live control**: the teacher sees who is in the lobby and who is working, can freeze a seat, give extra time, and look at results.
+- **Anti-cheat**: the server keeps the clock and locks a test to one browser. Leaving the exam window counts as a strike, and the third submits the test.
+- **Security**: two-factor sign-in is required for teachers and superadmins. Repeated wrong passwords lock the account for a while.
 
-## ✨ Features
-
-- 🔐 **Institutional Email Authentication**: Dedicated registration system restricting signups to verified `@srmist.edu.in` accounts with secure activation tokens.
-- ⏱️ **Interactive Quiz Engine**: Timed questions, real-time score tracking, instant feedback explanations, and random choice shuffling.
-- 🛡️ **Anti-Cheat Monitoring**: Fullscreen enforcement, focus-loss detection, tab-switching warnings, and automatic submission upon violation.
-- 📊 **Leaderboard & Analytics**: Live leaderboard with tie handling, average score computations, category performance breakdowns, and user profile analytics.
-- 🛠️ **Custom Admin Panel**: Dedicated Django administration suite with user activation/deactivation buttons, password resets, and choice inline inspection.
-- 📧 **Configurable Email Support**: Gmail SMTP with automated fallback to Django console backend for seamless local development.
-- 🧪 **100% Automated Test Suite**: Built-in unit and integration test coverage for models, views, custom middleware, and management commands.
-
----
-
-## 📁 Project Structure
+## Run it on your computer
 
 ```
-django_quizapp/
-├── quiz_project/               # Project configuration & settings
-│   ├── settings.py             # App settings with .env support & STATIC_ROOT
-│   ├── urls.py                 # Root URL configuration
-│   ├── wsgi.py                 # WSGI production server interface
-│   └── asgi.py                 # ASGI configuration
-├── quiz/                       # Main application
-│   ├── models.py               # Category, Question, Choice, UserQuiz, UserStatistics
-│   ├── views.py                # Quiz engine, auth, results, leaderboard views
-│   ├── forms.py                # Registration and validation forms
-│   ├── urls.py                 # Quiz route mappings
-│   ├── admin.py                # ModelAdmin registrations
-│   ├── user_admin.py           # Custom user administration actions
-│   ├── middleware.py           # AdminAccessMiddleware security layer
-│   ├── tokens.py               # Email verification token generator
-│   ├── tests.py                # Unit and integration test suite
-│   ├── fixtures/
-│   │   └── questions_data.json # Initial question bank fixture
-│   ├── management/commands/    # Custom management commands
-│   │   ├── add_questions.py
-│   │   ├── add_django_questions.py
-│   │   ├── create_test_users.py
-│   │   ├── clear_users.py
-│   │   └── create_unique_questions.py
-│   └── templates/              # HTML templates & email templates
-├── static/                     # CSS stylesheets & assets
-├── templates/                  # Base layout templates
-├── manage.py                   # Django CLI management script
-├── requirements.txt            # Dependencies
-├── .env.example                # Environment variables template
-└── README.md
-```
-
----
-
-## 🚀 Getting Started
-
-### 1. Clone the Repository
-```bash
 git clone https://github.com/Anshhh0306/django_quizapp.git
 cd django_quizapp
-```
-
-### 2. Create and Activate Virtual Environment
-```bash
-# Windows
 python -m venv .venv
-.\.venv\Scripts\activate
-
-# Linux / macOS
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install Dependencies
-```bash
+.venv\Scripts\activate          # Linux / macOS: source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 4. Configure Environment Variables
-Copy the sample environment file:
-```bash
-cp .env.example .env
-```
-Edit `.env` to configure your custom `DJANGO_SECRET_KEY` and optional Gmail SMTP credentials (`EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD`). If no password is provided, verification emails will output to the terminal console automatically.
-
-### 5. Apply Database Migrations
-```bash
+copy .env.example .env          # Linux / macOS: cp .env.example .env
 python manage.py migrate
-```
-
-### 6. Load Sample Questions
-Load the included question bank fixture:
-```bash
-python manage.py loaddata quiz/fixtures/questions_data.json
-```
-Or run the interactive question generator command:
-```bash
-python manage.py add_django_questions
-```
-
-### 7. Create Superuser (Optional)
-```bash
 python manage.py createsuperuser
-```
-
-### 8. Run Development Server
-```bash
 python manage.py runserver
 ```
-Navigate to `http://127.0.0.1:8000/` in your browser.
 
----
+Then open http://127.0.0.1:8000/. Without a mail password in `.env`, the emails (verification links, resets) are printed in the terminal instead of being sent.
 
-## 🧪 Running Automated Tests
+## Settings
 
-Run the full automated test suite:
-```bash
+All settings come from environment variables or `.env`. See `.env.example`. On a real server, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False` and `DJANGO_ALLOWED_HOSTS` are all required or the site refuses to start. Never commit `.env`: it holds the mail password.
+
+## Tests
+
+```
 python manage.py test
 ```
 
----
+## Locked out of two-factor?
 
-## 📦 Useful Management Commands
+A superadmin who has lost both their phone and their recovery codes can be let back in from the server:
 
-- `python manage.py add_questions` - Adds sample Django questions to the database.
-- `python manage.py add_django_questions` - Adds a comprehensive bank of 100 Django questions.
-- `python manage.py create_test_users` - Simulates test users with quiz scores for testing leaderboards.
-- `python manage.py clear_users` - Cleans non-superuser accounts from the database.
-
----
-
-## 📄 License
-This project is licensed under the MIT License.
+```
+python manage.py reset_two_factor <username>
+```

@@ -11,42 +11,5 @@
     <div><dt>Joined</dt><dd>{{ request.user.date_joined|date:"j M Y" }}</dd></div>
     <div><dt>Two-factor sign-in</dt><dd>{% if two_factor_on %}On{% else %}Off{% endif %}. <a href="{% url 'two_factor' %}">Manage security</a></dd></div>
   </dl>
-
-  {% if stats or quiz_history or category_performance %}
-  <h2>Earlier quizzes</h2>
-  {% if stats %}
-  <div class="stat-row">
-    <div class="stat-card"><span class="stat-value">#{{ stats.rank }}</span><span class="stat-label">Rank</span></div>
-    <div class="stat-card"><span class="stat-value">{{ stats.total_points }}</span><span class="stat-label">Total points</span></div>
-    <div class="stat-card"><span class="stat-value">{{ stats.total_quizzes }}</span><span class="stat-label">Quizzes completed</span></div>
-    <div class="stat-card"><span class="stat-value">{{ stats.average_score|floatformat:1 }}%</span><span class="stat-label">Average score</span></div>
-  </div>
-  {% endif %}
-
-  {% if category_performance %}
-  <div class="rows">
-    {% for category, performance in category_performance.items %}
-    <div class="row">
-      <div class="row__main"><h3 class="row__title">{{ category.name }}</h3>
-        <p class="row__meta">Average {{ performance.avg_score|floatformat:1 }}%, best {{ performance.best_score }}%</p></div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  {% if quiz_history %}
-  <h3>Recent history</h3>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Category</th><th>Score</th><th>Date</th></tr></thead>
-      <tbody>
-        {% for quiz in quiz_history %}
-        <tr><td>{{ quiz.category.name }}</td><td>{{ quiz.score }}/{{ quiz.total_points }}</td><td>{{ quiz.taken_on|date:"M d, Y" }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-  {% endif %}
 </div>
 {% endblock %}

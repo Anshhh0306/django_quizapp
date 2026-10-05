@@ -7,7 +7,6 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
-from quiz.models import Category
 from quiz.roles import role_of
 from quiz.tokens import email_verification_token
 
@@ -74,7 +73,6 @@ class RegistrationTests(TestCase):
 class RoleAccessTests(TestCase):
     def setUp(self):
         cache.clear()
-        self.category = Category.objects.create(name='Python')
         self.student = User.objects.create_user('ad3919', 'ad3919@srmist.edu.in', PASSWORD)
         self.staff = User.objects.create_user('shantini', 'shantini@srmist.edu.in', PASSWORD)
 
@@ -102,12 +100,7 @@ class RoleAccessTests(TestCase):
         self.client.login(username='shantini', password=PASSWORD)
         r = self.client.get(reverse('home'))
         self.assertEqual(r.context['role'], 'pending')
-        self.assertNotIn('categories', r.context)
-
-    def test_staff_cannot_start_quizzes(self):
-        self.client.login(username='shantini', password=PASSWORD)
-        r = self.client.get(reverse('start_quiz', args=[self.category.id]))
-        self.assertRedirects(r, reverse('home'))
+        self.assertNotIn('my_exams', r.context)
 
     def test_admin_action_approves_staff_but_skips_students(self):
         admin = User.objects.create_superuser('root', 'root@srmist.edu.in', PASSWORD)

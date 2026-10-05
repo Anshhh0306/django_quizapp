@@ -58,15 +58,6 @@ CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 SECURE_REFERRER_POLICY = 'same-origin'
 
-# Security settings for quiz
-QUIZ_SETTINGS = {
-    'PREVENT_MULTIPLE_TABS': True,
-    'PREVENT_BACK_NAVIGATION': True,
-    'RANDOMIZE_CHOICES': True,
-    'HIDE_CORRECT_ANSWERS_IN_HTML': True
-}
-
-
 # Application definition
 
 INSTALLED_APPS = [

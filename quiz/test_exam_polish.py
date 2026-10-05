@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from quiz.exam_device import COOKIE
 from quiz.exams import QUESTION_ROWS, parse_allowed, read_student_list, read_table
-from quiz.models import Category, Exam, ExamAllowed, Question
+from quiz.models import Exam, ExamAllowed, Question
 from quiz.test_exam_device import DESKTOP, FIREFOX, DeviceBase
 from quiz.test_exam_take import PASSWORD, TakeBase
 from quiz.test_exams import TeacherBase, xlsx
@@ -158,7 +158,7 @@ class StudentPageTests(TakeBase):
     def newcomer(self):
         return User.objects.create_user('ab5555', 'ab5555@srmist.edu.in', PASSWORD)
 
-    def test_no_old_quiz_text_when_there_are_no_categories(self):
+    def test_the_student_home_has_no_leftover_old_quiz_text(self):
         r = self.home(self.students[0])
         self.assertContains(r, 'My exams')
         for text in ('Available Quizzes', 'Choose of', 'No quiz categories'):
@@ -166,12 +166,6 @@ class StudentPageTests(TakeBase):
 
     def test_a_student_with_no_exams_is_told_what_to_do(self):
         self.assertContains(self.home(self.newcomer()), 'You have no exams yet')
-
-    def test_old_quizzes_still_show_when_categories_exist(self):
-        Question.objects.create(text='q', category=Category.objects.create(name='Python'))
-        r = self.home(self.newcomer())
-        self.assertContains(r, 'Available Quizzes')
-        self.assertNotContains(r, 'You have no exams yet')
 
     def test_view_result_appears_only_once_there_is_a_result(self):
         self.run_now()

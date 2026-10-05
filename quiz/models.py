@@ -1,16 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
 
-class Category(models.Model):
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    
-    def __str__(self):
-        return self.name
-    
-    class Meta:
-        verbose_name_plural = "Categories"
-
 class QuestionSet(models.Model):
     """One teacher upload: a named group of questions the teacher can open, hide or delete as a whole."""
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='question_sets')
@@ -27,7 +17,6 @@ class QuestionSet(models.Model):
 
 class Question(models.Model):
     text = models.CharField(max_length=500)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='questions', null=True)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='question_bank')  # teacher who uploaded it
     question_set = models.ForeignKey(QuestionSet, on_delete=models.CASCADE, null=True, blank=True, related_name='questions')  # the upload it came from
     time_limit = models.IntegerField(default=30)  # Time limit in seconds
@@ -44,90 +33,6 @@ class Choice(models.Model):
 
     def __str__(self):
         return self.text[:80]
-
-class UserQuiz(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    completed = models.BooleanField(default=False)
-    score = models.IntegerField(default=0)
-    total_questions = models.IntegerField(default=0)
-    total_points = models.IntegerField(default=0)
-    taken_on = models.DateTimeField(null=True, blank=True)
-    average_time_per_question = models.FloatField(default=0)
-    # In-progress state lives here (not in the session) so restarting can't reset it
-    question_ids = models.JSONField(default=list, blank=True)
-    current_index = models.IntegerField(default=0)
-    question_started_at = models.DateTimeField(null=True, blank=True)  # server-side timer
-
-    class Meta:
-        unique_together = ['user', 'category']
-
-    def __str__(self):
-        return f"{self.user.username} - {self.category.name} - {'done' if self.completed else 'not done'}"
-
-class UserAnswer(models.Model):
-    """Store individual user answers for review purposes"""
-    user_quiz = models.ForeignKey(UserQuiz, on_delete=models.CASCADE, related_name='user_answers')
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    selected_choice = models.ForeignKey(Choice, on_delete=models.CASCADE, null=True, blank=True)
-    is_correct = models.BooleanField(default=False)
-    time_taken = models.FloatField(default=0.0)  # Time taken to answer in seconds
-    
-    class Meta:
-        unique_together = ['user_quiz', 'question']
-    
-    def __str__(self):
-        return f"{self.user_quiz.user.username} - Q: {self.question.text[:50]} - {'✓' if self.is_correct else '✗'}"
-
-class UserStatistics(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    total_quizzes = models.IntegerField(default=0)
-    total_questions = models.IntegerField(default=0)
-    total_points = models.IntegerField(default=0)
-    average_score = models.FloatField(default=0)
-    rank = models.IntegerField(default=0)
-    last_quiz_date = models.DateTimeField(null=True, blank=True)
-    
-    def update_stats(self):
-        # Get all completed quizzes
-        quizzes = UserQuiz.objects.filter(user=self.user, completed=True)
-        
-        # Update basic stats
-        self.total_quizzes = quizzes.count()
-        self.total_questions = quizzes.aggregate(models.Sum('total_questions'))['total_questions__sum'] or 0
-        self.total_points = quizzes.aggregate(models.Sum('score'))['score__sum'] or 0
-        
-        if self.total_questions > 0:
-            self.average_score = round((self.total_points / self.total_questions) * 100, 1)
-            
-        # Update category breakdown
-        category_counts = quizzes.values('category__name').annotate(count=models.Count('id'))
-        
-        # Update last quiz date
-        if self.total_quizzes > 0:
-            self.last_quiz_date = quizzes.latest('taken_on').taken_on
-            
-        self.save()
-    
-    def __str__(self):
-        return f"{self.user.username}'s Statistics"
-
-# Signal to create/update user statistics when a quiz is completed
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-
-@receiver(post_save, sender=UserQuiz)
-def update_user_statistics(sender, instance, **kwargs):
-    if instance.completed:
-        stats, created = UserStatistics.objects.get_or_create(user=instance.user)
-        stats.update_stats()
-        
-        # Update ranks for all users
-        all_stats = UserStatistics.objects.all().order_by('-total_points')
-        for rank, stats in enumerate(all_stats, 1):
-            stats.rank = rank
-            stats.save()
-
 
 # ---- Exams (teacher-created, shared by link) ----
 import secrets
