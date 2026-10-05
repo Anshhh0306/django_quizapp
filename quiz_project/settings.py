@@ -114,27 +114,17 @@ WSGI_APPLICATION = 'quiz_project.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# DATABASE_URL (postgres://user:password@host:5432/name) selects PostgreSQL; without it the site uses the SQLite file,
-# which is all you need on your own computer. "manage.py test" reads TEST_DATABASE_URL instead and ignores
-# DATABASE_URL, so running the tests can never reach the live database; without it the tests use SQLite.
-_database_url = os.environ.get('TEST_DATABASE_URL' if 'test' in sys.argv else 'DATABASE_URL')
-if _database_url:
-    # conn_max_age: keep a connection for a minute instead of reconnecting on every request. conn_health_checks: test it
-    # before reuse, because a database that sleeps when idle (Neon) closes its connections.
-    DATABASES = {'default': dj_database_url.parse(_database_url, conn_max_age=60, conn_health_checks=True)}
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-            'OPTIONS': {
-                # Many students writing at once (seat claims, autosaves): make writers wait their turn instead of
-                # failing with "database is locked". PostgreSQL is still the right database for real exams.
-                'transaction_mode': 'IMMEDIATE',
-                'timeout': 20,
-            },
-        }
-    }
+# PostgreSQL only. DATABASE_URL (postgres://user:password@host:5432/name) names the database. There is no fallback: a
+# server that forgot to set it stops with a plain message instead of quietly starting on an empty throwaway database.
+# "manage.py test" reads TEST_DATABASE_URL instead and ignores DATABASE_URL, so running the tests can never reach the live
+# database (on your own computer both can hold the same address: Django makes and removes its own test_ database).
+_database_setting = 'TEST_DATABASE_URL' if 'test' in sys.argv else 'DATABASE_URL'
+_database_url = os.environ.get(_database_setting)
+if not _database_url:
+    raise ImproperlyConfigured(f'{_database_setting} must be set to a PostgreSQL address (see .env.example)')
+# conn_max_age: keep a connection for a minute instead of reconnecting on every request. conn_health_checks: test it
+# before reuse, because a database that sleeps when idle (Neon) closes its connections.
+DATABASES = {'default': dj_database_url.parse(_database_url, conn_max_age=60, conn_health_checks=True)}
 
 # Login locks and rate-limit counters live in this cache. Django's default keeps only 300 entries and silently
 # drops the oldest when full, which would drop a lock; this keeps plenty. ponytail: per process, so with several

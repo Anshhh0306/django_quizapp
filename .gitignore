@@ -57,8 +57,10 @@ db.sqlite3-journal
 media/
 staticfiles/
 
-# Environments
+# Environments (.env holds passwords; any misspelling such as .env.txt is ignored too, the example file is not)
 .env
+.env.*
+!.env.example
 .venv/
 env/
 venv/
