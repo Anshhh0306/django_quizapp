@@ -1,0 +1,4 @@
+# Files the Linux host reads must keep Unix line endings, whatever Git does on Windows (a Windows line ending breaks a shell script).
+build.sh text eol=lf
+render.yaml text eol=lf
+.python-version text eol=lf

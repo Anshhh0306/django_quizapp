@@ -44,6 +44,8 @@ if not SECRET_KEY:
 
 # Only these Host names are served. This also stops a forged Host header from poisoning the links in emails.
 _hosts = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
+if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):  # Render tells the site its own address (only while it runs, not during the build)
+    _hosts.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])  # a platform variable: a visitor cannot send an environment variable
 if _hosts:
     ALLOWED_HOSTS = _hosts
 elif DEBUG:
@@ -134,8 +136,9 @@ DATABASES['default'].setdefault('OPTIONS', {}).setdefault('connect_timeout', 10)
 
 # Behind a host's proxy the visitor's address and the page's scheme come from the proxy (quiz/util.client_ip and
 # quiz.middleware.AssumeHttpsMiddleware). Both are off here, so a direct connection is never believed about who it is.
-# TRUSTED_PROXY_COUNT = how many proxies of the HOST are in front of the app (Zoho Catalyst: 1). Set it only when ALL traffic
-# really comes through them. ASSUME_HTTPS = the host ends HTTPS itself and passes plain requests on (Zoho: True).
+# TRUSTED_PROXY_COUNT = how many proxies of the HOST are in front of the app (Zoho Catalyst: 1; Render: measure it). Set it only when
+# ALL traffic really comes through them, and only to the number the superadmin's "how the site sees your address" panel (Locked
+# logins page) confirms. ASSUME_HTTPS = the host ends HTTPS itself and passes plain requests on (Zoho and Render: True).
 TRUSTED_PROXY_COUNT = int(os.environ.get('DJANGO_TRUSTED_PROXY_COUNT') or 0)
 ASSUME_HTTPS = os.environ.get('DJANGO_ASSUME_HTTPS', '').strip().lower() in ('true', '1', 't')
 if ASSUME_HTTPS:  # that host ends HTTPS and sends HSTS itself (Zoho does), so Django's own redirect and HSTS would only repeat it

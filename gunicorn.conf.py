@@ -1,6 +1,7 @@
 """How gunicorn runs the site on a real server. gunicorn finds this file by itself when it is started in this folder:
 
-    python3 -m gunicorn quiz_project.wsgi:application
+    gunicorn quiz_project.wsgi:application              (Render)
+    python3 -m gunicorn quiz_project.wsgi:application   (Zoho Catalyst AppSail)
 """
 import os
 
