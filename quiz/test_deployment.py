@@ -15,6 +15,7 @@ from django.contrib.auth.models import User
 from django.contrib.staticfiles.storage import staticfiles_storage
 from django.core.cache import cache
 from django.core.cache.backends.base import CacheKeyWarning
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
@@ -78,8 +79,8 @@ class ClientIpTests(SimpleTestCase):
 
 
 class NoHeaderDumpTests(SimpleTestCase):
-    """A host's gateway can put credentials in request headers (Zoho's puts an admin token and the project secret key in x-zc-*
-    on every request). So no code may print, log or show the headers as a whole: only look up the one header it needs."""
+    """A host's gateway can put credentials in request headers (one did: an admin token and the project secret key, on every
+    request). So no code may print, log or show the headers as a whole: only look up the one header it needs."""
     FORBIDDEN = re.compile(r'request\.headers|META\.(?:items|keys|values|copy)\(|dict\(request\.META|vars\(request|repr\(request|print\(request')
 
     def test_no_module_or_template_dumps_the_headers(self):
@@ -136,7 +137,7 @@ class VisitorsBehindOneProxyTests(TestCase):
 
 @override_settings(ALLOWED_HOSTS=['quiz.example.com'])
 class AssumeHttpsTests(TestCase):
-    """Zoho's gateway ends HTTPS, sends no X-Forwarded-Proto and puts the port in Host ("name:443")."""
+    """A gateway that ends HTTPS itself, sends no X-Forwarded-Proto and puts the port in Host ("name:443")."""
     HOST = 'quiz.example.com:443'
 
     def browser_login_post(self):
@@ -199,7 +200,7 @@ class ProductionSettingsTests(SimpleTestCase):
     def settings_for(self, **env):
         base = {'DATABASE_URL': 'postgres://u:p@localhost:5432/scratch', 'TEST_DATABASE_URL': '', 'DJANGO_DEBUG': 'False',
                 'DJANGO_SECRET_KEY': 'x' * 60, 'DJANGO_ALLOWED_HOSTS': 'quiz.example.com', 'DJANGO_TRUSTED_PROXY_COUNT': '',
-                'DJANGO_ASSUME_HTTPS': ''}
+                'DJANGO_ASSUME_HTTPS': '', 'RENDER_EXTERNAL_HOSTNAME': ''}
         def reload_clean():  # reload() re-runs the file in the same namespace, so a name set by an earlier run would linger
             for name in ('STORAGES', 'SILENCED_SYSTEM_CHECKS', 'WHITENOISE_USE_FINDERS', 'WHITENOISE_AUTOREFRESH'):
                 vars(project_settings).pop(name, None)
@@ -212,10 +213,21 @@ class ProductionSettingsTests(SimpleTestCase):
         module = self.settings_for()
         self.assertEqual((module.TRUSTED_PROXY_COUNT, module.ASSUME_HTTPS, getattr(module, 'SILENCED_SYSTEM_CHECKS', [])), (0, False, []))
 
-    def test_the_switches_for_a_host_like_zoho(self):
+    def test_the_switches_for_a_host_that_ends_https_itself(self):
         module = self.settings_for(DJANGO_TRUSTED_PROXY_COUNT='1', DJANGO_ASSUME_HTTPS='True')
         self.assertEqual((module.TRUSTED_PROXY_COUNT, module.ASSUME_HTTPS), (1, True))
         self.assertEqual(module.SILENCED_SYSTEM_CHECKS, ['security.W004', 'security.W008'])  # the host does HTTPS and HSTS itself
+
+    def test_the_hosts_the_site_answers_to(self):
+        self.assertEqual(self.settings_for().ALLOWED_HOSTS, ['quiz.example.com'])
+        # Render tells the site its own address while it runs; a visitor cannot send an environment variable
+        self.assertEqual(self.settings_for(DJANGO_ALLOWED_HOSTS='', RENDER_EXTERNAL_HOSTNAME='quizhub.onrender.com').ALLOWED_HOSTS, ['quizhub.onrender.com'])
+        both = self.settings_for(RENDER_EXTERNAL_HOSTNAME='quizhub.onrender.com').ALLOWED_HOSTS
+        self.assertEqual(sorted(both), ['quiz.example.com', 'quizhub.onrender.com'])
+
+    def test_a_real_server_that_knows_no_host_refuses_to_start(self):
+        with self.assertRaisesMessage(ImproperlyConfigured, 'DJANGO_ALLOWED_HOSTS'):
+            self.settings_for(DJANGO_ALLOWED_HOSTS='', RENDER_EXTERNAL_HOSTNAME='')
 
     def test_a_real_server_uses_fingerprinted_static_files_and_secure_cookies(self):
         module = self.settings_for()
@@ -251,6 +263,48 @@ class StaticFilesTests(SimpleTestCase):
                 self.assertRegex(staticfiles_storage.url(name), r'\.[0-9a-f]{12}\.', name)  # style.5f3a1c9d2b7e.css
 
 
+class AddressPanelTests(TestCase):
+    """The superadmin's panel for checking TRUSTED_PROXY_COUNT on a host: it shows how the site sees their own address and nothing else."""
+    ADDRESSES = {'REMOTE_ADDR': '10.9.9.9', 'HTTP_X_FORWARDED_FOR': '6.6.6.6, 203.0.113.9', 'HTTP_CF_CONNECTING_IP': '198.51.100.4'}
+
+    def setUp(self):
+        cache.clear()
+        self.admin = User.objects.create_superuser('root', 'root@srmist.edu.in', 'Some-Long-Pass-77')
+        self.client.force_login(self.admin)
+
+    def page(self, **extra):
+        response = self.client.get(reverse('login_locks'), **{**self.ADDRESSES, **extra})
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    @override_settings(TRUSTED_PROXY_COUNT=1)
+    def test_it_shows_how_the_site_sees_you_and_where_each_address_comes_from(self):
+        html = self.page()
+        self.assertTrue(all(text in html for text in ('203.0.113.9', '198.51.100.4', '10.9.9.9', '6.6.6.6')), 'an address is missing from the panel')
+        self.assertTrue('number 1 from the right' in html and 'number 2 from the right' in html)
+
+    @override_settings(TRUSTED_PROXY_COUNT=0)
+    def test_with_nothing_trusted_the_site_sees_only_the_direct_connection(self):
+        panel = self.page().split('How the site sees your address')[1]
+        self.assertTrue(panel.index('The site sees you as') < panel.index('10.9.9.9') < panel.index('Proxies trusted now'))
+
+    def test_text_in_the_headers_is_escaped(self):
+        html = self.page(HTTP_X_FORWARDED_FOR='<b>x</b>, 203.0.113.9')
+        self.assertFalse('<b>x</b>' in html)
+        self.assertTrue('&lt;b&gt;x&lt;/b&gt;' in html)
+
+    def test_no_other_header_is_ever_shown(self):
+        self.assertFalse('topsecretvalue' in self.page(HTTP_X_SOMETHING_ELSE='topsecretvalue', HTTP_AUTHORIZATION='topsecretvalue'))
+
+    def test_only_the_superadmin_gets_it(self):
+        student = User.objects.create_user('ab1000', 'ab1000@srmist.edu.in', 'Some-Long-Pass-78')
+        client = Client()
+        client.force_login(student)
+        response = client.get(reverse('login_locks'), **self.ADDRESSES)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse('203.0.113.9' in response.content.decode())
+
+
 class LoggingTests(SimpleTestCase):
     def test_errors_are_not_hidden_when_debug_is_off(self):
         """Django's own console handler only works with DEBUG on: on a real server every crash would leave no trace."""
@@ -268,8 +322,8 @@ class GunicornConfigTests(SimpleTestCase):
             return runpy.run_path(str(settings.BASE_DIR / 'gunicorn.conf.py'))
 
     def test_the_host_says_which_port(self):
-        self.assertEqual(self.config(X_ZOHO_CATALYST_LISTEN_PORT='9123', PORT='1111')['bind'], '0.0.0.0:9123')
-        self.assertEqual(self.config(PORT='1111')['bind'], '0.0.0.0:1111')
+        self.assertEqual(self.config(X_ZOHO_CATALYST_LISTEN_PORT='9123', PORT='1111')['bind'], '0.0.0.0:9123')  # Zoho's
+        self.assertEqual(self.config(PORT='10000')['bind'], '0.0.0.0:10000')  # Render's default, and most other hosts
         self.assertEqual(self.config()['bind'], '0.0.0.0:8000')
 
     def test_one_process_so_the_counters_are_exact(self):

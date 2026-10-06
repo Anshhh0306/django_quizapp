@@ -30,5 +30,25 @@
   {% else %}
     <p class="notice notice--ok">No account is locked right now.</p>
   {% endif %}
+
+  <h2>How the site sees your address</h2>
+  <p>On any "what is my IP" website, the address it shows is your real one. The site should see you as that same address: the limits
+     per address and the device addresses teachers see depend on it. If it does not, set <code>DJANGO_TRUSTED_PROXY_COUNT</code> to the
+     number whose row below shows your real address (0 trusts nothing). <small class="muted">Only you, as superadmin, see this.</small></p>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>The site sees you as</th><td>{{ address.seen_as }}</td></tr>
+        <tr><th>Proxies trusted now</th><td>{{ address.trusted }}</td></tr>
+        <tr><th>Direct connection</th><td>{{ address.remote_addr }}</td></tr>
+        <tr><th>CF-Connecting-IP</th><td>{{ address.cloudflare|default:"-" }}</td></tr>
+        {% for n, ip in address.from_the_right %}
+        <tr><th>X-Forwarded-For, number {{ n }} from the right</th><td>{{ ip }}</td></tr>
+        {% empty %}
+        <tr><th>X-Forwarded-For</th><td>-</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

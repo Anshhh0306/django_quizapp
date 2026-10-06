@@ -33,3 +33,12 @@ def client_ip(request):
             except ValueError:
                 pass
     return direct
+
+
+def address_report(request):
+    """How the site sees THIS request's address: only the few headers that decide it, never the rest, and only for the superadmin who
+    asks. Their real address is on any "what is my IP" site; the row that shows it tells which number settings.TRUSTED_PROXY_COUNT needs."""
+    forwarded = [part.strip()[:60] for part in request.META.get('HTTP_X_FORWARDED_FOR', '').split(',') if part.strip()][-10:]
+    return {'seen_as': client_ip(request) or '-', 'trusted': settings.TRUSTED_PROXY_COUNT,
+            'remote_addr': request.META.get('REMOTE_ADDR') or '-', 'cloudflare': request.META.get('HTTP_CF_CONNECTING_IP', '')[:60],
+            'from_the_right': [(n, forwarded[-n]) for n in range(1, len(forwarded) + 1)]}

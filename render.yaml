@@ -1,0 +1,32 @@
+# Render Blueprint: in Render choose New > Blueprint and pick this repository. It makes the web service below and asks for the values
+# marked "sync: false" (typed in the Render dashboard, never stored in this file). The database is Neon: use its DIRECT address.
+services:
+  - type: web
+    name: quizhub
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: bash build.sh
+    startCommand: gunicorn quiz_project.wsgi:application
+    healthCheckPath: /accounts/login/
+    autoDeployTrigger: commit
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ASSUME_HTTPS
+        value: "True"
+      # Trust no proxy header until the "How the site sees your address" panel (superadmin, Locked logins page) says which number is right.
+      - key: DJANGO_TRUSTED_PROXY_COUNT
+        value: "0"
+      # Render makes a random key itself: nobody ever sees or types it.
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      # The first superadmin, made by the build (the free plan has no shell). Remove the password from the settings after the first deploy.
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false

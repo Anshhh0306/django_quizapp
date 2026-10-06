@@ -120,6 +120,25 @@ class BuiltFolderTests(SimpleTestCase):
         self.assertFalse([word for word in ('SECRET_KEY', 'PASSWORD', 'DATABASE_URL') if word in text.upper()])
 
 
+class QuickRebuildWithPackagesTests(SimpleTestCase):
+    """A quick rebuild keeps the Linux packages. They cannot all be imported on this computer, so the static files must be collected somewhere
+    else than inside the build folder (found when the first real quick rebuild failed on psycopg's Linux files)."""
+
+    def test_a_quick_rebuild_into_a_folder_that_holds_packages_still_collects_the_static_files(self):
+        build = load_script()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        out = Path(tmp.name) / 'zoho'
+        quietly(build.build, out, skip_packages=True)
+        (out / 'psycopg').mkdir()  # the one package Django imports first: here it cannot load, as the Linux one cannot on Windows
+        (out / 'psycopg' / '__init__.py').write_text('raise ImportError("a package that only loads on Linux")')
+        recorded = json.loads((out / '.build-manifest.json').read_text(encoding='utf-8'))
+        (out / '.build-manifest.json').write_text(json.dumps({**recorded, 'packages': ['psycopg']}))
+        quietly(build.build, out, skip_packages=True)
+        self.assertTrue((out / 'staticfiles' / 'staticfiles.json').exists())
+        self.assertTrue((out / 'psycopg' / '__init__.py').exists(), 'the kept package must stay')
+
+
 class RebuildTests(SimpleTestCase):
     """What a second build may and may not touch. The slow steps are replaced: it is the bookkeeping that is tested here."""
 
@@ -227,6 +246,11 @@ class RebuildTests(SimpleTestCase):
         self.assertEqual(outside.read_text(), 'keep')
         self.assertTrue((self.out / 'sub' / 'inner.txt').exists())
 
+    def test_a_secret_ends_up_in_app_config_json_and_nowhere_else(self):
+        self.run_build(skip_packages=True, host={'DJANGO_SECRET_KEY': 'zq9needle' + 'x' * 50})
+        where = [p.name for p in self.out.rglob('*') if p.is_file() and b'zq9needle' in p.read_bytes()]
+        self.assertEqual(where, ['app-config.json'])
+
     def test_config_only_rewrites_just_the_config(self):
         self.out.mkdir()
         (self.out / 'app-config.json').write_text(json.dumps({'command': 'echo hi', 'build_path': '.', 'stack': 'python_3_13',
@@ -237,3 +261,131 @@ class RebuildTests(SimpleTestCase):
         self.assertEqual(os.listdir(self.out), ['app-config.json'])
         with self.assertRaisesRegex(SystemExit, 'build first'):
             quietly(self.build.main, [str(self.base / 'nothing-here'), '--config-only'])
+
+
+class SecretsFileTests(SimpleTestCase):
+    """--secrets-file: the host's secrets go from a private file into app-config.json, and no value is ever printed."""
+    PASSWORD = 'Zq7needle9fK2'
+    URL = f'postgresql://owner:{PASSWORD}@ep-quiet-sound-123456.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'
+    POOLED = URL.replace('ep-quiet-sound-123456', 'ep-quiet-sound-123456-pooler')
+    KEY = 'kx3needle' + 'k' * 50
+    LAPTOP_ONLY = 'Laptopneedle-1'
+
+    def setUp(self):
+        self.build = load_script()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+        self.out = self.base / 'zoho'
+        self.out.mkdir()
+        (self.out / 'app-config.json').write_text(json.dumps({'build_path': '.', 'stack': 'python_3_13', 'env_variables': {}, 'scripts': {}}))
+        self.file = self.base / 'secrets.env'
+
+    def put(self, text):
+        self.file.write_bytes(text.encode('utf-8'))  # bytes: no newline translation, so a Windows line ending in the text stays as written
+
+    def run_main(self):
+        """Runs the script with the secrets file and returns EVERYTHING it printed (and its stop message, if it stopped)."""
+        shown = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(shown), contextlib.redirect_stderr(shown):
+                self.build.main([str(self.out), '--config-only', '--secrets-file', str(self.file)])
+        except SystemExit as stop:
+            shown.write(str(stop))
+        return shown.getvalue()
+
+    def env(self):
+        return json.loads((self.out / 'app-config.json').read_text())['env_variables']
+
+    def test_the_host_gets_the_names_it_reads_and_nothing_else(self):
+        self.put(f'# kept private\n\nDATABASE_URL="{self.URL}"\nexport DJANGO_SECRET_KEY={self.KEY}\r\nDJANGO_SUPERUSER_PASSWORD={self.LAPTOP_ONLY}\nPGUSER=owner\n')
+        printed = self.run_main()
+        self.assertEqual(self.env(), {'DJANGO_DEBUG': 'False', 'DJANGO_TRUSTED_PROXY_COUNT': '1', 'DJANGO_ASSUME_HTTPS': 'True',
+                                      'DATABASE_URL': self.URL, 'DJANGO_SECRET_KEY': self.KEY, 'DJANGO_ALLOWED_HOSTS': '.catalystappsail.in'})
+        self.assertIn('DJANGO_SUPERUSER_PASSWORD, PGUSER', printed)  # named as left behind, never shown
+
+    def test_what_a_file_may_give_the_host_cannot_override_its_public_settings_or_carry_a_login(self):
+        names = self.build.HOST_NAMES
+        self.assertFalse(set(names) & set(self.build.PUBLIC_SETTINGS))
+        self.assertFalse([name for name in names if name.startswith(('DJANGO_SUPERUSER', 'PG', 'TEST_'))])
+
+    def test_a_public_setting_cannot_be_overridden_by_what_the_host_is_given(self):
+        self.build.write_config(self.out, {'DJANGO_DEBUG': 'True', 'DJANGO_TRUSTED_PROXY_COUNT': '99'})
+        self.assertEqual((self.env()['DJANGO_DEBUG'], self.env()['DJANGO_TRUSTED_PROXY_COUNT']), ('False', '1'))
+
+    def test_an_exact_host_name_is_kept(self):
+        self.put(f'DATABASE_URL={self.URL}\nDJANGO_SECRET_KEY={self.KEY}\nDJANGO_ALLOWED_HOSTS=quizhub-1.development.catalystappsail.in\n')
+        self.run_main()
+        self.assertEqual(self.env()['DJANGO_ALLOWED_HOSTS'], 'quizhub-1.development.catalystappsail.in')
+
+    def test_no_value_is_ever_printed(self):
+        cases = {'a good file': f'DATABASE_URL={self.URL}\nDJANGO_SECRET_KEY={self.KEY}\nDJANGO_SUPERUSER_PASSWORD={self.LAPTOP_ONLY}\n',
+                 'no key yet': f'DATABASE_URL={self.URL}\n',
+                 'the pooled address': f'DATABASE_URL={self.POOLED}\n',
+                 'a line that is not a setting': f'DATABASE_URL={self.URL}\n{self.LAPTOP_ONLY}\n',
+                 'the wrong kind of address': f'DATABASE_URL=mysql://owner:{self.PASSWORD}@host/db\n'}
+        for what, text in cases.items():
+            self.put(text)
+            printed = self.run_main()
+            self.assertTrue(printed, what)
+            for value in ('needle', self.PASSWORD, self.KEY, self.LAPTOP_ONLY, *[v for v in self.env().values() if len(v) > 20]):
+                self.assertNotIn(value, printed, what)
+
+    def test_a_missing_key_is_made_once_and_kept_for_every_later_build(self):
+        self.put(f'DATABASE_URL={self.URL}')  # no newline at the end, on purpose
+        self.run_main()
+        first = self.env()['DJANGO_SECRET_KEY']
+        saved = self.file.read_bytes()
+        self.assertGreaterEqual(len(first), 50)
+        self.assertEqual(saved.decode().splitlines()[0], f'DATABASE_URL={self.URL}')  # the new line was not glued to the old one
+        self.assertEqual(saved.decode().count('DJANGO_SECRET_KEY='), 1)
+        self.run_main()
+        self.assertEqual(self.env()['DJANGO_SECRET_KEY'], first)
+        self.assertEqual(self.file.read_bytes(), saved)
+
+    def test_a_file_inside_the_project_is_refused(self):
+        self.file = REPO / 'a_secrets_file_that_must_not_exist.env'
+        self.assertIn('inside the project', self.run_main())
+        self.assertFalse(self.file.exists())
+
+    def test_a_bad_database_address_is_refused_and_the_config_is_left_alone(self):
+        for text, expected in ((f'DATABASE_URL={self.POOLED}\n', 'direct'),
+                               (f'DATABASE_URL=mysql://owner:{self.PASSWORD}@host/db\n', 'postgres address'),
+                               ('DATABASE_URL=postgresql://owner@ep-x.neon.tech/db\n', 'postgres address'),  # no password
+                               ('DATABASE_URL=postgresql://[broken/db\n', 'postgres address'),
+                               (f'DJANGO_SECRET_KEY={self.KEY}\n', 'DATABASE_URL')):
+            self.put(text)
+            self.assertIn(expected, self.run_main(), text)
+        self.assertEqual(self.env(), {})
+
+    def test_a_line_that_is_not_a_setting_is_refused_by_its_number_only(self):
+        self.put(f'DATABASE_URL={self.URL}\nhunter2needle\n')
+        printed = self.run_main()
+        self.assertIn('line 2', printed)
+        self.assertNotIn('hunter2', printed)
+        self.assertEqual(self.env(), {})
+
+    def test_a_file_that_is_not_utf8_or_is_missing_is_refused(self):
+        self.file.write_bytes(f'DATABASE_URL={self.URL}\n'.encode('utf-16'))
+        self.assertIn('UTF-8', self.run_main())
+        self.file.unlink()
+        self.assertIn('no secrets file', self.run_main())
+
+    def test_a_later_build_without_the_file_keeps_what_the_config_has(self):
+        self.put(f'DATABASE_URL={self.URL}\nDJANGO_SECRET_KEY={self.KEY}\n')
+        self.run_main()
+        quietly(self.build.main, [str(self.out), '--config-only'])
+        self.assertEqual((self.env()['DATABASE_URL'], self.env()['DJANGO_SECRET_KEY']), (self.URL, self.KEY))
+
+    def test_a_bad_file_stops_a_full_build_before_any_slow_step(self):
+        self.put('nothing useful here\n')
+        with mock.patch.object(self.build, 'build') as build, self.assertRaises(SystemExit):
+            quietly(self.build.main, [str(self.out), '--secrets-file', str(self.file)])
+        build.assert_not_called()
+
+    def test_a_full_build_is_handed_the_secrets(self):
+        self.put(f'DATABASE_URL={self.URL}\nDJANGO_SECRET_KEY={self.KEY}\n')
+        with mock.patch.object(self.build, 'build') as build:
+            quietly(self.build.main, [str(self.out), '--secrets-file', str(self.file)])
+        (_, skip_packages, host), _ = build.call_args
+        self.assertEqual((skip_packages, host['DATABASE_URL'], host['DJANGO_SECRET_KEY']), (False, self.URL, self.KEY))
