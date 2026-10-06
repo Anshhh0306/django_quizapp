@@ -90,6 +90,14 @@ python3 -m gunicorn quiz_project.wsgi:application
 
 `gunicorn.conf.py` is read automatically: it takes the port from `X_ZOHO_CATALYST_LISTEN_PORT` (or `PORT`) and runs ONE process with 8 threads. One process is on purpose, because the login locks and rate limits are kept in its memory; with several processes or instances each would count on its own, and a shared cache would be needed. gunicorn only runs on Linux; on Windows use `runserver`. To check the settings, run `python manage.py check --deploy` with the same variables set (it reports nothing when `DJANGO_ASSUME_HTTPS` is on, because such a host does HTTPS and HSTS itself).
 
+## Deploying to Zoho Catalyst (AppSail)
+
+1. **Build the folder Zoho uploads.** `python deploy/build_zoho.py` makes it next to the project folder (`..\quizhub_zoho`, never inside it): the code, the collected static files, the Linux versions of the packages (one pip command, printed before it runs; nothing is installed on your computer) and an `app-config.json` that holds no secrets. It needs Python 3.13 and your own `pip install -r requirements.txt` done first. Run it again after every code change; add `--skip-packages` for a quick rebuild when only the code changed.
+2. **The first time only:** in that folder run `catalyst init` (AppSail, Catalyst-managed runtime, Python 3.13, source directory `.`). Then, in the project folder, run `python deploy/build_zoho.py --config-only`: it puts the start command back into the `app-config.json` that `catalyst init` made.
+3. **Secrets go into the Zoho console, never into a file:** `DATABASE_URL` (Neon's direct address), `DJANGO_SECRET_KEY` (a long random string) and `DJANGO_ALLOWED_HOSTS` (the AppSail host name; `.catalystappsail.in` works for the very first start, before you know the name, then replace it by the exact one). Later `EMAIL_HOST_PASSWORD`. The settings that are not secrets are already in `app-config.json`.
+4. **Deploy:** `catalyst deploy` in the Zoho folder.
+5. **The database:** from your own computer (on a network that allows the database port), with `DATABASE_URL` set for that one window only, run `python manage.py migrate` and `python manage.py createsuperuser`. They are not run when the site starts, because the site must be listening within 10 seconds.
+
 ## Locked out of two-factor?
 
 A superadmin who has lost both their phone and their recovery codes can be let back in from the server:
