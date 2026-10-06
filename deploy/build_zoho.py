@@ -22,6 +22,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from importlib import metadata
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -98,13 +99,19 @@ def copy_app(out):
 
 
 def collect_static(out):
-    """collectstatic with production settings, run here on the copy: it only copies and fingerprints files, so a Linux build is not needed."""
+    """collectstatic with production settings, run here: it only copies and fingerprints files, so a Linux build is not needed. It runs on a
+    clean copy of the site and only the collected files are moved into `out`: inside `out` itself, a rebuild that keeps the Linux packages
+    would import THEM first (psycopg's Linux files do not load on Windows) and fail."""
     env = {**os.environ, 'DJANGO_DEBUG': 'False', 'DJANGO_SECRET_KEY': secrets.token_urlsafe(50), 'DJANGO_ALLOWED_HOSTS': 'localhost',
            'DATABASE_URL': 'postgres://build:build@localhost/build'}  # never used: collectstatic does not touch the database
     for name in ('TEST_DATABASE_URL', 'DJANGO_ASSUME_HTTPS', 'DJANGO_TRUSTED_PROXY_COUNT'):
         env.pop(name, None)
-    if subprocess.run([sys.executable, 'manage.py', 'collectstatic', '--noinput', '-v', '0'], cwd=out, env=env).returncode:
-        fail('collectstatic failed (see above): a template or stylesheet names a static file that does not exist.')
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        work = Path(tmp)
+        copy_app(work)
+        if subprocess.run([sys.executable, 'manage.py', 'collectstatic', '--noinput', '-v', '0'], cwd=work, env=env).returncode:
+            fail('collectstatic failed (see above): a template or stylesheet names a static file that does not exist.')
+        shutil.copytree(work / 'staticfiles', out / 'staticfiles')
 
 
 def add_packages(out):
@@ -195,7 +202,7 @@ def build(out, skip_packages=False, host=None):
     app, new_packages = set(), set()
     try:
         copy_app(out)
-        collect_static(out)  # before the Linux packages are added: it runs here, with this computer's own Django
+        collect_static(out)  # runs on a clean copy with this computer's own Django, never inside `out` (which may hold the Linux packages)
         app = names(out) - before
         if not skip_packages:
             add_packages(out)

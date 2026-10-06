@@ -87,6 +87,8 @@ Before the first start, with the same variables set **and `DJANGO_DEBUG=False`**
 4. **Deploy:** `catalyst deploy` in the Zoho folder.
 5. **The database:** from your own computer (on a network that allows the database port), with `DATABASE_URL` set for that one window only, run `python manage.py migrate`, then `python manage.py ensure_superuser` with `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL` and `DJANGO_SUPERUSER_PASSWORD` set the same way (or `createsuperuser`). They are not run when the site starts, because the site must be listening within 10 seconds.
 
+Zoho's gateway passes every request body on as `Transfer-Encoding: chunked` with no `Content-Length`, and Django cannot read such a body: without a fix every form (the sign-in first of all) arrives empty. `quiz_project/wsgi.py` therefore reads a chunked body (up to 5 MB, more gets a 413) and hands it on as an ordinary one. It does nothing for a request that has a `Content-Length`, so it is harmless on every other host.
+
 ## Deploying to Render
 
 `render.yaml` (the service), `build.sh` (what each build runs) and `.python-version` (Python 3.13) are everything Render needs.

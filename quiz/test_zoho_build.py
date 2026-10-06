@@ -120,6 +120,25 @@ class BuiltFolderTests(SimpleTestCase):
         self.assertFalse([word for word in ('SECRET_KEY', 'PASSWORD', 'DATABASE_URL') if word in text.upper()])
 
 
+class QuickRebuildWithPackagesTests(SimpleTestCase):
+    """A quick rebuild keeps the Linux packages. They cannot all be imported on this computer, so the static files must be collected somewhere
+    else than inside the build folder (found when the first real quick rebuild failed on psycopg's Linux files)."""
+
+    def test_a_quick_rebuild_into_a_folder_that_holds_packages_still_collects_the_static_files(self):
+        build = load_script()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        out = Path(tmp.name) / 'zoho'
+        quietly(build.build, out, skip_packages=True)
+        (out / 'psycopg').mkdir()  # the one package Django imports first: here it cannot load, as the Linux one cannot on Windows
+        (out / 'psycopg' / '__init__.py').write_text('raise ImportError("a package that only loads on Linux")')
+        recorded = json.loads((out / '.build-manifest.json').read_text(encoding='utf-8'))
+        (out / '.build-manifest.json').write_text(json.dumps({**recorded, 'packages': ['psycopg']}))
+        quietly(build.build, out, skip_packages=True)
+        self.assertTrue((out / 'staticfiles' / 'staticfiles.json').exists())
+        self.assertTrue((out / 'psycopg' / '__init__.py').exists(), 'the kept package must stay')
+
+
 class RebuildTests(SimpleTestCase):
     """What a second build may and may not touch. The slow steps are replaced: it is the bookkeeping that is tested here."""
 
