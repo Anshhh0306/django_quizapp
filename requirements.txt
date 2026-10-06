@@ -1,5 +1,5 @@
 asgiref==3.9.2
-Django==5.2.6
+Django==5.2.17
 python-dotenv==1.2.3
 six==1.17.0
 sqlparse==0.5.3
@@ -12,3 +12,7 @@ django-otp==1.7.3
 segno==1.6.6
 psycopg[binary]==3.3.6
 dj-database-url==3.1.2
+
+# The real server (gunicorn only runs on Linux hosts; it just sits unused on Windows) and its static-file helper
+gunicorn==26.2.0
+whitenoise==6.12.0

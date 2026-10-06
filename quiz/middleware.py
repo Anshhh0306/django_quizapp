@@ -8,6 +8,26 @@ from django.urls import resolve, reverse
 
 from . import two_factor
 from .ratelimit import bump
+from .util import client_ip
+
+
+class AssumeHttpsMiddleware:
+    """For a host that ends HTTPS itself and passes plain requests on without saying so (Zoho Catalyst; its Host header
+    even carries the port: "name:443"). Django would take the page for plain http, build http://name:443/... links in emails
+    and redirects, and refuse every form post because the browser's Origin (https://name) does not match. With
+    settings.ASSUME_HTTPS on, every request counts as HTTPS and a ":443" is dropped from the host. It believes nothing the
+    visitor sends except the Host text, which Django still checks against ALLOWED_HOSTS. Must be FIRST in MIDDLEWARE."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if settings.ASSUME_HTTPS:
+            request.META['wsgi.url_scheme'] = 'https'
+            host = request.META.get('HTTP_HOST', '')
+            if host.endswith(':443'):
+                request.META['HTTP_HOST'] = host[:-4]
+        return self.get_response(request)
 
 
 class TwoFactorGateMiddleware:
@@ -45,7 +65,7 @@ class RequestCapMiddleware:
 
     def __call__(self, request):
         caps = settings.REQUEST_CAPS
-        if caps and (bump(f'rc:ip:{request.META.get("REMOTE_ADDR")}', 60) > caps['address']
+        if caps and (bump(f'rc:ip:{client_ip(request)}', 60) > caps['address']
                      or (request.user.is_authenticated and bump(f'rc:user:{request.user.pk}', 60) > caps['user'])):
             if request.path.startswith('/exam/'):  # the exam page reads JSON from its background calls
                 response = JsonResponse({'ok': False, 'reason': 'slow_down'}, status=429)

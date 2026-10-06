@@ -41,7 +41,7 @@ Then open http://127.0.0.1:8000/. Without a mail password, the emails (verificat
 
 ## Settings
 
-Settings come from environment variables or a file called `.env`. `.env.example` lists them all; the three that only a real server needs are switched off. Copy the lines you need. On a real server, `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False` and `DJANGO_ALLOWED_HOSTS` are all required or the site refuses to start. Never commit `.env`: it holds passwords.
+Settings come from environment variables or a file called `.env`. `.env.example` lists them all; the three that only a real server needs are switched off. Copy the lines you need. On a real server, `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` are required or the site refuses to start (see "On a real server" below). Never commit `.env`: it holds passwords.
 
 ## Database
 
@@ -70,6 +70,25 @@ python manage.py runserver
 ```
 
 `seed_demo` prints the password all demo accounts share (a new random one each run; choose your own with `--password`), the exam links, and the authenticator key of the superadmin (`demo.admin`) and the teachers (`demo.teacher1`, `demo.teacher2`). Students are `zz0001` to `zz0050`. For the code step of a staff sign-in, `python manage.py seed_demo --code demo.teacher1` prints the current code. Running the command again keeps the data and gives everyone a new password and key.
+
+## On a real server
+
+A real server starts the site through gunicorn, not `manage.py`, so it is safe by default: debug is off, and the site refuses to start without `DJANGO_SECRET_KEY` (a long random string, for example `python -c "import secrets; print(secrets.token_urlsafe(50))"`) and `DJANGO_ALLOWED_HOSTS`. Set these as the host's environment variables (`.env.example` explains each one): `DATABASE_URL` (for Neon use its direct address, the host WITHOUT `-pooler`), `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, and behind a host's proxy `DJANGO_TRUSTED_PROXY_COUNT` and `DJANGO_ASSUME_HTTPS`.
+
+Before the first start, with the same variables set **and `DJANGO_DEBUG=False`** (otherwise the static files get plain names), run:
+
+```
+python manage.py collectstatic --noinput
+python manage.py migrate
+```
+
+(`collectstatic` only needs `DATABASE_URL` to exist; any address will do for it.) Then start the site with:
+
+```
+python3 -m gunicorn quiz_project.wsgi:application
+```
+
+`gunicorn.conf.py` is read automatically: it takes the port from `X_ZOHO_CATALYST_LISTEN_PORT` (or `PORT`) and runs ONE process with 8 threads. One process is on purpose, because the login locks and rate limits are kept in its memory; with several processes or instances each would count on its own, and a shared cache would be needed. gunicorn only runs on Linux; on Windows use `runserver`. To check the settings, run `python manage.py check --deploy` with the same variables set (it reports nothing when `DJANGO_ASSUME_HTTPS` is on, because such a host does HTTPS and HSTS itself).
 
 ## Locked out of two-factor?
 

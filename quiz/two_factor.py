@@ -32,6 +32,7 @@ from .exam_device import describe_device, log_event
 from .lock_alert import mail_later
 from .models import Exam, ExamAttempt
 from .roles import role_of
+from .util import client_ip
 
 RECOVERY_CODES = 10
 EXEMPT_PREFIXES = ('/2fa/', '/accounts/logout/', '/static/')  # reachable while signed in but not yet verified
@@ -121,7 +122,7 @@ def note_browser(request, response):
         mail_later('New sign-in to your SRMIST Quiz account', (
             f'Hello {user.username},\n\nYour account was just used from a browser it has not been used from before:\n\n'
             f'  Browser: {describe_device(request.META.get("HTTP_USER_AGENT", ""))}\n'
-            f'  Address: {request.META.get("REMOTE_ADDR") or "unknown"}\n'
+            f'  Address: {client_ip(request) or "unknown"}\n'
             f'  Time: {timezone.localtime():%d %b %Y, %H:%M} IST\n\n'
             'If that was you, there is nothing to do.\n\n'
             'If it was NOT you, reset your password now. That also signs the other browser out:\n'
@@ -318,7 +319,7 @@ def _login_during_exam(sender, request, user, **kwargs):
     """The teacher's log says when a student account signed in while that student's exam was running (the password was
     accepted: the second step may not have happened). Evidence only; nothing is punished, because a sign-in can be
     someone else's doing. A sign-in made without a real request has no address, and is not logged."""
-    address = request.META.get('REMOTE_ADDR') if request is not None else None
+    address = client_ip(request) if request is not None else None
     if not address:
         return
     attempts = ExamAttempt.objects.filter(user=user, started_at__isnull=False, submitted_at__isnull=True,

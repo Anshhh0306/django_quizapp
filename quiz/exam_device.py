@@ -9,6 +9,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from .models import ExamAttempt, ExamEvent
+from .util import client_ip
 
 COOKIE = 'exam_device'
 ACTIVE_SECONDS = 30   # the locked browser checks in every ~8 seconds; this long without a check-in counts as silent
@@ -41,8 +42,7 @@ def log_event(exam, kind, detail='', attempt=None, actor=None):
 
 
 def _here(request):
-    return (request.device_id, describe_device(request.META.get('HTTP_USER_AGENT', '')),
-            request.META.get('REMOTE_ADDR') or None)
+    return request.device_id, describe_device(request.META.get('HTTP_USER_AGENT', '')), client_ip(request)
 
 
 def bind_device(request, attempt, now=None):
