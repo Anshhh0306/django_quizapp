@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from .roles import TEACHERS_GROUP, is_student, role_of
+from .roles import STUDENTS_GROUP, TEACHERS_GROUP, is_student, role_of
 from django.contrib.auth.tokens import default_token_generator
 from django.template.loader import render_to_string
 from django.urls import path, reverse
@@ -18,7 +18,7 @@ User = get_user_model()
 class CustomUserAdmin(UserAdmin):
     list_display = ('username', 'email', 'role', 'is_active', 'date_joined', 'last_login', 'is_staff')
     list_filter = ('is_active', 'is_staff', 'groups', 'date_joined')
-    actions = ['approve_teachers']
+    actions = ['approve_teachers', 'make_students']
     search_fields = ('username', 'email')
     ordering = ('-date_joined',)
     
@@ -32,11 +32,24 @@ class CustomUserAdmin(UserAdmin):
         approved = 0
         for user in queryset:
             if is_student(user):
-                self.message_user(request, f'{user.username} has a student email; skipped.', level=messages.WARNING)
+                self.message_user(request, f'{user.username} is a student (register-number address or Students group); skipped.', level=messages.WARNING)
             else:
                 user.groups.add(group)
                 approved += 1
         self.message_user(request, f'{approved} user(s) approved as teachers.')
+
+    @admin.action(description='Make selected users students (any address; ends their teacher status)')
+    def make_students(self, request, queryset):
+        students, teachers = (Group.objects.get_or_create(name=name)[0] for name in (STUDENTS_GROUP, TEACHERS_GROUP))
+        made = 0
+        for user in queryset:
+            if user.is_superuser:
+                self.message_user(request, f'{user.username} is a superadmin, whose role does not come from a group; skipped.', level=messages.WARNING)
+            else:
+                user.groups.add(students)
+                user.groups.remove(teachers)  # the two roles never overlap
+                made += 1
+        self.message_user(request, f'{made} user(s) made students.')
 
     def get_urls(self):
         # These change data, so they are POST-only (a plain link click cannot trigger them) and go through the

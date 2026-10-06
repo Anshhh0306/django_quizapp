@@ -4,7 +4,7 @@ from django.contrib.admin.forms import AdminAuthenticationForm
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.hashers import UNUSABLE_PASSWORD_PREFIX
 from django.core.exceptions import ValidationError
-from .exams import parse_allowed, read_student_list, read_upload
+from .exams import group_student_emails, parse_allowed, read_student_list, read_upload
 from .lock_alert import alert_owner
 from .models import Exam, Question
 from .ratelimit import login_blocked, login_failed, login_succeeded
@@ -148,7 +148,7 @@ class ExamForm(forms.ModelForm):
             except ValueError as e:
                 self.add_error('allowed_file', str(e))
         try:
-            emails, bad = parse_allowed(text)
+            emails, bad = parse_allowed(text, group_student_emails())
         except ValueError as e:  # more students than one class list may hold
             self.add_error('allowed_text', str(e))
             self.cleaned_data['allowed_emails'] = []

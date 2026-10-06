@@ -17,8 +17,8 @@ from .exam_integrity import MAX_STRIKES, freeze_evidence, integrity_rows
 from .util import to_int
 from .exam_results import result_rows, result_summary, result_table
 from .exam_run import COUNTDOWN_SECONDS, end_exam, finalize_expired, start_exam
-from .exams import (QUESTION_ROWS, STUDENT_ROWS, create_questions, parse_allowed, parse_questions, read_student_list,
-                    read_upload, template_bytes)
+from .exams import (QUESTION_ROWS, STUDENT_ROWS, create_questions, group_student_emails, parse_allowed, parse_questions,
+                    read_student_list, read_upload, template_bytes)
 from .forms import ExamForm
 from .models import Choice, Exam, ExamAllowed, ExamAttempt, Question, QuestionSet
 from .question_sets import create_set, delete_set, name_for_upload
@@ -220,7 +220,7 @@ def exam_detail(request, pk):
                 except ValueError as e:
                     error = str(e)
             try:
-                emails, bad = parse_allowed(text)
+                emails, bad = parse_allowed(text, group_student_emails())
             except ValueError as e:  # more students than one class list may hold
                 error, emails, bad = str(e), [], []
             if error:
