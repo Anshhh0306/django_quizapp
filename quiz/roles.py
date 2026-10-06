@@ -2,7 +2,7 @@ import re
 
 # Students: 2 letters + 4 digits (AD3919). Staff: name-style (shantini). Compared after lowercasing.
 STUDENT_RE = re.compile(r'^[a-z]{2}\d{4}@srmist\.edu\.in$')
-STAFF_RE = re.compile(r'^[a-z][a-z0-9._-]*@srmist\.edu\.in$')  # no '+', so no plus-alias duplicates
+STAFF_RE = re.compile(r'^[a-z][a-z0-9._-]{0,63}@srmist\.edu\.in$')  # no '+', so no plus-alias duplicates; at most 64 before the @ (the username column holds 150)
 TEACHERS_GROUP = 'Teachers'
 
 

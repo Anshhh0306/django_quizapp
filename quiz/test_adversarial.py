@@ -240,6 +240,17 @@ class LoginTests(World):
             self.assertEqual(response.status_code, 200, f'{name} got in while the account was locked')
 
 
+class SignUpTests(World):
+    def test_an_overlong_staff_address_is_refused_not_a_crash(self):
+        """The username column holds 150 characters and the address 254: a staff-style address with a long name used to crash the page."""
+        for name in ('x' * 65, 'x' * 300):
+            response = Client().post(reverse('register'), {'email': f'{name}@srmist.edu.in'})
+            self.assertEqual(response.status_code, 200, f'{len(name)} characters')
+            self.assertFalse(User.objects.filter(username=name).exists(), f'{len(name)} characters were accepted')
+        Client().post(reverse('register'), {'email': 'x' * 64 + '@srmist.edu.in'})  # the longest name still works
+        self.assertTrue(User.objects.filter(username='x' * 64).exists())
+
+
 class SeatRaceTests(TransactionTestCase):
     def test_students_racing_for_the_last_seats_never_get_more_than_the_limit(self):
         teacher = staff('shantini')

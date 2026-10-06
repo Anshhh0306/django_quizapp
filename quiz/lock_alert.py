@@ -9,7 +9,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
-from .ratelimit import LOGIN_FREE_TRIES
+from .ratelimit import LOGIN_FREE_TRIES, key_part
 
 ALERT_EVERY = 60 * 60  # at most one alert an hour per account, so this cannot be used to flood someone's inbox
 
@@ -35,7 +35,7 @@ def alert_owner(request, username, seconds):
     background thread: waiting for the mail server would make the 5th wrong password slower for real accounts than for
     made-up ones, which would reveal which IDs exist. (Only the thread sends; it never touches the database.)"""
     name = (username or '').strip().lower()[:150]
-    if not name or not cache.add(f'lf:alert:{name}', 1, ALERT_EVERY):
+    if not name or not cache.add(f'lf:alert:{key_part(name)}', 1, ALERT_EVERY):
         return
     user = User.objects.filter(username__iexact=name, is_active=True).exclude(email='').first()
     if user is None:

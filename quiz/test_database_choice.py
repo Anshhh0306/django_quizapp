@@ -34,6 +34,11 @@ class DatabaseChoiceTests(SimpleTestCase):
         self.assertEqual((db['ENGINE'], db['HOST'], db['NAME']), ('django.db.backends.postgresql', 'live.example.com', 'live'))
         self.assertTrue(db['CONN_HEALTH_CHECKS'])  # a sleeping database drops connections; test one before reusing it
 
+    def test_a_database_that_does_not_answer_is_given_up_on_after_a_few_seconds(self):
+        """Without a limit a database that is down or waking up holds each request for minutes (260 seconds measured)."""
+        self.assertEqual(self.database('runserver', DATABASE_URL=LIVE)['OPTIONS']['connect_timeout'], 10)
+        self.assertEqual(int(self.database('runserver', DATABASE_URL=LIVE + '?connect_timeout=3')['OPTIONS']['connect_timeout']), 3)
+
     def test_tests_never_use_the_live_address(self):
         self.assertEqual(self.database('test', DATABASE_URL=LIVE, TEST_DATABASE_URL=LOCAL)['NAME'], 'scratch')
         # no test address: refuse, rather than fall back to the live database

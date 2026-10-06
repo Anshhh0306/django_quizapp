@@ -1,3 +1,4 @@
+import hashlib
 import math
 import time
 from functools import wraps
@@ -5,8 +6,17 @@ from functools import wraps
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 
-# ponytail: everything here uses the default cache (per-process LocMemCache, fixed windows, REMOTE_ADDR).
-# With several workers switch CACHES to redis/db; behind a proxy fix REMOTE_ADDR first (deployment must do both).
+from .util import client_ip
+
+# ponytail: everything here uses the default cache (per-process LocMemCache, fixed windows, client_ip).
+# The host must run ONE process (gunicorn.conf.py says workers = 1) or the counters are not shared between processes;
+# with several, switch CACHES to a database or Redis cache.
+
+
+def key_part(text):
+    """User-typed text as part of a cache key: a short fixed-length hash. Names, posted values and URL pieces can be long,
+    hold spaces or control characters (not allowed in a key), or be sent by an attacker to fill the cache with huge keys."""
+    return hashlib.sha256(text.encode('utf-8', 'replace')).hexdigest()[:32]
 
 
 def bump(key, window):
@@ -27,9 +37,9 @@ def rate_limit(name, limit, window, field=None, field_limit=None):
         @wraps(view)
         def wrapper(request, *args, **kwargs):
             if request.method == 'POST':
-                keys = [(f'rl:{name}:ip:{request.META.get("REMOTE_ADDR")}', limit)]
+                keys = [(f'rl:{name}:ip:{client_ip(request)}', limit)]
                 if field and request.POST.get(field):
-                    keys.append((f'rl:{name}:{field}:{request.POST[field].strip().lower()[:254]}', field_limit or limit))
+                    keys.append((f'rl:{name}:{field}:{key_part(request.POST[field].strip().lower()[:254])}', field_limit or limit))
                 for key, cap in keys:
                     if bump(key, window) > cap:
                         return HttpResponse('Too many requests. Please try again later.', status=429)
@@ -45,7 +55,7 @@ def user_rate_limit(name, limit, window=60):
     def decorator(view):
         @wraps(view)
         def wrapper(request, *args, **kwargs):
-            if bump(f'rl:{name}:{request.user.pk}:{kwargs.get("token", "")}', window) > limit:
+            if bump(f'rl:{name}:{request.user.pk}:{key_part(kwargs.get("token", ""))}', window) > limit:
                 return JsonResponse({'ok': False, 'reason': 'slow_down'}, status=429, headers={'Retry-After': str(window)})
             return view(request, *args, **kwargs)
         return wrapper
@@ -72,7 +82,7 @@ def _name(username):
 
 
 def _login_keys(username, ip):
-    name = _name(username)
+    name = key_part(_name(username))
     return f'lf:acct:{name}', f'lf:lock:{name}', f'lf:ip:{ip}'
 
 

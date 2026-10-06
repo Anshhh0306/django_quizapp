@@ -75,7 +75,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'quiz.middleware.AssumeHttpsMiddleware',  # FIRST: on a host that ends HTTPS itself, tell Django the page is https (ASSUME_HTTPS)
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # serves the static files (CSS, fonts) from the app itself on a real server
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -125,11 +127,35 @@ if not _database_url:
 # conn_max_age: keep a connection for a minute instead of reconnecting on every request. conn_health_checks: test it
 # before reuse, because a database that sleeps when idle (Neon) closes its connections.
 DATABASES = {'default': dj_database_url.parse(_database_url, conn_max_age=60, conn_health_checks=True)}
+# A time limit on each connection attempt (per address, in seconds). Without one a database that is down, waking up (Neon) or
+# unreachable (a blocked port) holds every request that needs it for minutes, until the operating system gives up (260 seconds
+# measured here), and a few stuck requests use up all the server's threads. The address can choose its own: ...?connect_timeout=5
+DATABASES['default'].setdefault('OPTIONS', {}).setdefault('connect_timeout', 10)
+
+# Behind a host's proxy the visitor's address and the page's scheme come from the proxy (quiz/util.client_ip and
+# quiz.middleware.AssumeHttpsMiddleware). Both are off here, so a direct connection is never believed about who it is.
+# TRUSTED_PROXY_COUNT = how many proxies of the HOST are in front of the app (Zoho Catalyst: 1). Set it only when ALL traffic
+# really comes through them. ASSUME_HTTPS = the host ends HTTPS itself and passes plain requests on (Zoho: True).
+TRUSTED_PROXY_COUNT = int(os.environ.get('DJANGO_TRUSTED_PROXY_COUNT') or 0)
+ASSUME_HTTPS = os.environ.get('DJANGO_ASSUME_HTTPS', '').strip().lower() in ('true', '1', 't')
+if ASSUME_HTTPS:  # that host ends HTTPS and sends HSTS itself (Zoho does), so Django's own redirect and HSTS would only repeat it
+    SILENCED_SYSTEM_CHECKS = ['security.W004', 'security.W008']  # `check --deploy` warnings about exactly those two
 
 # Login locks and rate-limit counters live in this cache. Django's default keeps only 300 entries and silently
 # drops the oldest when full, which would drop a lock; this keeps plenty. ponytail: per process, so with several
 # workers (gunicorn) or a restart the counters are not shared: use a database or Redis cache then.
 CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'OPTIONS': {'MAX_ENTRIES': 50_000}}}
+
+# With DEBUG off, Django's own logging drops every error (its console handler only works in debug mode), so a crash on a
+# real server would leave no trace. This sends warnings and errors, with their traceback, to the console, which is where a
+# host collects logs. It adds no request data: never log request headers (a host's gateway puts credentials in some).
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {'plain': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'}},
+    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'plain'}},
+    'loggers': {'django': {'handlers': ['console'], 'level': 'INFO'}},
+}
 
 
 # Password validation
@@ -180,6 +206,15 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [ BASE_DIR / "static" ]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+if DEBUG:  # your own computer and the tests: serve straight from the app folders, no collectstatic needed
+    WHITENOISE_USE_FINDERS = True
+    WHITENOISE_AUTOREFRESH = True
+else:
+    # A real server: `manage.py collectstatic` (run with DJANGO_DEBUG=False too, or it makes plain names) copies every static
+    # file to STATIC_ROOT with a fingerprint in its name (style.css -> style.5f3a1c.css) and a compressed twin, so browsers keep
+    # a file for a year and a new deploy is picked up at once. A page that names a file that was not collected is an error.
+    STORAGES = {'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+                'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'}}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -235,3 +270,4 @@ if "test" in __import__("sys").argv:
     LOCK_ALERT_BACKGROUND = False  # a thread would put the mail in a later test's outbox
     TWO_FACTOR_REQUIRED_ROLES = set()  # the older tests sign teachers in without a code; the 2FA tests turn this on
     NEW_BROWSER_ALERTS = False
+    LOGGING['handlers']['console']['level'] = 'CRITICAL'  # the tests make plenty of 404s and 403s on purpose: keep the output readable

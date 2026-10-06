@@ -9,6 +9,7 @@ from .lock_alert import alert_owner
 from .models import Exam, Question
 from .ratelimit import login_blocked, login_failed, login_succeeded
 from .roles import STUDENT_RE, STAFF_RE
+from .util import client_ip
 
 def pending_account(email):
     """An account that registered but has not clicked its email link yet. Such an account has NO password until
@@ -55,7 +56,7 @@ class LoginThrottleMixin:
 
     def clean(self):
         username = self.cleaned_data.get('username', '')
-        ip = self.request.META.get('REMOTE_ADDR') if getattr(self, 'request', None) else None
+        ip = client_ip(self.request) if getattr(self, 'request', None) else None
         wait = login_blocked(username, ip)
         if wait:
             self.locked_for = wait
