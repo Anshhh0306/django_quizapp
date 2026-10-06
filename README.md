@@ -5,6 +5,7 @@ A Django site for running class tests. Teachers build a test from a CSV or Excel
 ## What it does
 
 - **Accounts**: students register with an `@srmist.edu.in` address and confirm it by email. Teachers register the same way and wait for a superadmin to approve them.
+- **Roles**: a superadmin is a superuser. A teacher is a member of the **Teachers** group; a student is a member of the **Students** group or has a register-number address (`ad3919@srmist.edu.in`, which needs no group). So a test account with any address gets its role from a group: in the admin site, open the user and tick a group, or select users in the list and use *Make selected users students* or *Approve selected users as teachers*. A class list may name a Students-group account by its address.
 - **Tests**: a teacher uploads questions, picks the ones to use, sets a seat limit and an optional class list, and shares the link. A test is either *scheduled* (the teacher starts it, with a fixed time) or *open* (anytime, no timer).
 - **Live control**: the teacher sees who is in the lobby and who is working, can freeze a seat, give extra time, and look at results.
 - **Anti-cheat**: the server keeps the clock and locks a test to one browser. Leaving the exam window counts as a strike, and the third submits the test.

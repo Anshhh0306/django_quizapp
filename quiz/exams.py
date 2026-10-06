@@ -4,10 +4,11 @@ import random
 import re
 import zipfile
 
+from django.contrib.auth.models import User
 from openpyxl import Workbook, load_workbook
 
 from .models import Choice, Question
-from .roles import STUDENT_RE
+from .roles import STUDENT_RE, STUDENTS_GROUP
 from .util import to_int
 
 MAX_ROWS = 500          # questions per upload
@@ -80,8 +81,14 @@ def read_upload(f):
     return f.read()
 
 
-def parse_allowed(text):
-    """Class list text -> (unique lowercase emails, bad tokens). 'AD3919' becomes 'ad3919@srmist.edu.in'."""
+def group_student_emails():
+    """The addresses (lowercase) of the accounts in the Students group: a class list may name them although they are not register numbers."""
+    return {email.lower() for email in User.objects.filter(groups__name=STUDENTS_GROUP).values_list('email', flat=True) if email}
+
+
+def parse_allowed(text, also_ok=()):
+    """Class list text -> (unique lowercase emails, bad tokens). 'AD3919' becomes 'ad3919@srmist.edu.in'. `also_ok` holds other addresses that
+    count as students (the Students group: see group_student_emails)."""
     emails, bad = [], []
     for token in re.split(r'[\s,;]+', text.strip()):
         if not token:
@@ -89,7 +96,7 @@ def parse_allowed(text):
         email = token.lower()
         if '@' not in email:
             email += '@srmist.edu.in'
-        if STUDENT_RE.match(email):
+        if STUDENT_RE.match(email) or email in also_ok:
             emails.append(email)
         else:
             bad.append(token)
