@@ -17,7 +17,7 @@
         <li>Make sure the address above is right.</li>
         <li>Wait a few minutes. It can be slow.</li>
       </ul>
-      <form method="post" action="{% url 'resend_verification' %}">
+      <form method="post" action="{% url 'resend_verification' %}" data-once>
         {% csrf_token %}
         <input type="hidden" name="email" value="{{ email }}">
         <button type="submit" class="btn resend-btn">Send it again</button>

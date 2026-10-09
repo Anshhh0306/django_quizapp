@@ -11,7 +11,7 @@
       is paused or the attempt is reported to your teacher, and it can affect your result.
     </p>
 
-    <form method="post" class="simple-form">
+    <form method="post" class="simple-form" data-once>
       {% csrf_token %}
       {% for error in form.non_field_errors %}
         <div class="error" role="alert">{{ error }}</div>

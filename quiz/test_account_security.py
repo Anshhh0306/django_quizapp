@@ -25,6 +25,19 @@ def verification_link():
     return LINK.search(mail.outbox[-1].body).group(1)
 
 
+class FakeClock:
+    """Lets a test move the clock forward: the rate-limit counters and the cache read time.time()."""
+
+    def start_clock(self):
+        self.offset, real = 0, time.time
+        patcher = mock.patch('time.time', lambda: real() + self.offset)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def wait(self, seconds):
+        self.offset += seconds
+
+
 class AccountTestCase(TestCase):
     def setUp(self):
         cache.clear()  # rate-limit and lockout counters live in the cache
@@ -37,7 +50,7 @@ class AccountTestCase(TestCase):
         return self.client.post(verification_link(), {'new_password1': password, 'new_password2': password})
 
 
-class PasswordChosenAfterTheLinkTests(AccountTestCase):
+class PasswordChosenAfterTheLinkTests(FakeClock, AccountTestCase):
     def test_registering_creates_an_account_with_no_password(self):
         self.register()
         user = User.objects.get(username='qq5555')
@@ -110,15 +123,20 @@ class PasswordChosenAfterTheLinkTests(AccountTestCase):
         self.assertNotIn(PASSWORD, body)
 
     def test_registering_again_resends_the_email_without_a_second_account(self):
+        self.start_clock()
         self.register()
+        self.wait(61)  # a minute later: pressed again at once it would send nothing more (FriendlyLimitTests)
         self.register()
         self.assertEqual((User.objects.count(), len(mail.outbox)), (1, 2))
 
     def test_resend_works_only_for_accounts_still_waiting(self):
+        self.start_clock()
         self.register()
+        self.wait(61)
         self.client.post(reverse('resend_verification'), {'email': 'QQ5555@srmist.edu.in'})
         self.assertEqual(len(mail.outbox), 2)
         self.client.post(verification_link(), {'new_password1': PASSWORD, 'new_password2': PASSWORD})
+        self.wait(61)
         self.client.post(reverse('resend_verification'), {'email': 'qq5555@srmist.edu.in'})
         self.assertEqual(len(mail.outbox), 2)  # already finished: nothing more is sent
 
@@ -127,7 +145,7 @@ class PasswordChosenAfterTheLinkTests(AccountTestCase):
         self.assertTrue(r.context['pending_teacher'])
 
 
-class DeactivatedAccountsStayDeactivatedTests(AccountTestCase):
+class DeactivatedAccountsStayDeactivatedTests(FakeClock, AccountTestCase):
     def deactivated_student(self):
         self.finish_registration()
         User.objects.filter(username='qq5555').update(is_active=False)  # what the admin button does
@@ -164,6 +182,8 @@ class DeactivatedAccountsStayDeactivatedTests(AccountTestCase):
 
     def test_registering_again_does_not_revive_it(self):
         self.deactivated_student()
+        self.start_clock()
+        self.wait(61)  # long after the registration: pressed at once it would send nothing (FriendlyLimitTests)
         before = len(mail.outbox)
         r = self.register()
         self.assertTemplateUsed(r, 'quiz/verification_sent.html')  # the same page as for any address
@@ -177,7 +197,7 @@ class DeactivatedAccountsStayDeactivatedTests(AccountTestCase):
         self.assertEqual(len(mail.outbox), before)
 
 
-class RegistrationRobustnessTests(AccountTestCase):
+class RegistrationRobustnessTests(FakeClock, AccountTestCase):
     def test_two_simultaneous_registrations_give_a_page_not_a_crash(self):
         with mock.patch('quiz.forms.RegisterForm.save', side_effect=IntegrityError):
             r = self.register()
@@ -197,23 +217,40 @@ class RegistrationRobustnessTests(AccountTestCase):
         self.assertEqual(r.status_code, 200)
 
     def test_one_inbox_cannot_be_flooded_but_a_class_can_register(self):
+        self.start_clock()
         for _ in range(5):
             self.assertEqual(self.register('victim1@srmist.edu.in').status_code, 200)
+            self.wait(61)  # a real new request a minute later; the same press repeated at once is free (FriendlyLimitTests)
         self.assertEqual(self.register('victim1@srmist.edu.in').status_code, 429)  # 5 an hour per mailbox
         for i in range(60):  # 60 different students behind one campus address, in the same hour
             self.assertEqual(self.register(f'ab{1000 + i}@srmist.edu.in').status_code, 200)
 
 
-class FriendlyLimitTests(AccountTestCase):
-    """Reaching an email form's limit shows a page that says how long to wait and where the email probably is, never a bare line of text."""
+class FriendlyLimitTests(FakeClock, AccountTestCase):
+    """Reaching an email form's limit shows a page that says how long to wait and where the email probably is, never a bare line of
+    text. And a student who presses a button again and again (or double-clicks) costs nothing: the repeats send no second email and
+    do not use up the hourly limit."""
+
+    def setUp(self):
+        super().setUp()
+        self.start_clock()
+        self.register()  # a waiting account: its first email is out, and the one-minute "just sent" window has started
 
     def resend(self, email='qq5555@srmist.edu.in'):
         return self.client.post(reverse('resend_verification'), {'email': email})
 
+    def next_resend(self):
+        """A press a minute after the last one: a real new request, which sends and counts (the same press repeated at once is free)."""
+        self.wait(61)
+        return self.resend()
+
+    def use_up_the_hour(self):
+        for _ in range(8):  # eight an hour per mailbox; the counting window began at the first of them, 61 seconds in
+            self.assertEqual(self.next_resend().status_code, 200)
+
     def test_the_refusal_is_a_proper_page_with_the_time_to_wait_and_the_junk_folder(self):
-        for _ in range(8):  # eight an hour per mailbox
-            self.assertEqual(self.resend().status_code, 200)
-        refused = self.resend()
+        self.use_up_the_hour()
+        refused = self.next_resend()
         self.assertEqual(refused.status_code, 429)
         self.assertTemplateUsed(refused, 'quiz/rate_limited.html')
         self.assertContains(refused, 'Junk or Spam', status_code=429)
@@ -222,23 +259,19 @@ class FriendlyLimitTests(AccountTestCase):
         self.assertTrue(0 < int(refused['Retry-After']) <= 3600)
 
     def test_the_page_counts_down_the_time_that_is_left(self):
-        for _ in range(8):
-            self.resend()
-        real = time.time
-        with mock.patch('time.time', lambda: real() + 1800):  # half an hour later the mailbox is still paused
-            refused = self.resend()
+        self.use_up_the_hour()
+        self.wait(61 + 1800 - self.offset)  # half an hour after the window began: the mailbox is still paused
+        refused = self.resend()
         self.assertEqual(refused.status_code, 429)
         self.assertContains(refused, '30 minutes', status_code=429)
         self.assertTrue(1700 <= int(refused['Retry-After']) <= 1800)
 
     def test_minutes_are_rounded_up_so_the_page_never_promises_too_early(self):
-        for _ in range(8):
-            self.resend()
-        real = time.time
-        with mock.patch('time.time', lambda: real() + 1810):  # 1790 seconds left is 29.8 minutes: say 30, not 29
-            self.assertContains(self.resend(), '<strong>30 minutes</strong>', status_code=429)
-        with mock.patch('time.time', lambda: real() + 3590):  # 10 seconds left: "1 minute", never "0 minutes" or "1 minutes"
-            self.assertContains(self.resend(), '<strong>1 minute</strong>', status_code=429)
+        self.use_up_the_hour()
+        self.wait(61 + 1810 - self.offset)  # 1790 seconds left is 29.8 minutes: say 30, not 29
+        self.assertContains(self.resend(), '<strong>30 minutes</strong>', status_code=429)
+        self.wait(61 + 3590 - self.offset)  # 10 seconds left: "1 minute", never "0 minutes" or "1 minutes"
+        self.assertContains(self.resend(), '<strong>1 minute</strong>', status_code=429)
 
     def test_the_wait_is_the_whole_window_when_its_start_was_not_kept(self):
         from quiz.ratelimit import bump, seconds_left
@@ -248,12 +281,66 @@ class FriendlyLimitTests(AccountTestCase):
     def test_registering_and_password_reset_get_the_same_page(self):
         for _ in range(5):
             self.register('victim1@srmist.edu.in')
+            self.wait(61)
         self.assertTemplateUsed(self.register('victim1@srmist.edu.in'), 'quiz/rate_limited.html')
         for _ in range(8):
             self.client.post(reverse('password_reset'), {'email': 'victim2@srmist.edu.in'})
+            self.wait(61)
         refused = self.client.post(reverse('password_reset'), {'email': 'victim2@srmist.edu.in'})
         self.assertEqual(refused.status_code, 429)
         self.assertTemplateUsed(refused, 'quiz/rate_limited.html')
+
+    # ---- a student who presses the button again and again ----
+
+    def test_pressing_send_it_again_over_and_over_sends_nothing_more_and_never_hits_the_limit(self):
+        self.assertEqual(len(mail.outbox), 1)  # the registration email, seconds ago
+        self.assertEqual([self.resend().status_code for _ in range(40)], [200] * 40)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_a_press_a_minute_later_sends_again_and_the_same_press_repeated_does_not(self):
+        self.next_resend()
+        self.assertEqual(len(mail.outbox), 2)
+        for _ in range(5):
+            self.resend()
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_repeats_are_free_for_an_address_with_no_account_too_so_nothing_tells_them_apart(self):
+        for _ in range(40):
+            self.assertEqual(self.resend('nobody@srmist.edu.in').status_code, 200)
+            self.assertEqual(self.client.post(reverse('password_reset'), {'email': 'nobody@srmist.edu.in'}).status_code, 200)
+
+    def test_a_double_click_on_create_account_sends_one_email(self):
+        for _ in range(6):
+            self.assertEqual(self.register('ab2222@srmist.edu.in').status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox].count(['ab2222@srmist.edu.in']), 1)
+
+    def test_a_double_click_on_forgot_password_sends_one_link(self):
+        self.finish_registration('ab3333@srmist.edu.in')  # an active account
+        before = len(mail.outbox)
+        for _ in range(6):
+            self.assertEqual(self.client.post(reverse('password_reset'), {'email': 'ab3333@srmist.edu.in'}).status_code, 200)
+        self.assertEqual(len(mail.outbox) - before, 1)
+
+    def test_a_failed_send_is_not_remembered_so_the_next_press_tries_again(self):
+        with mock.patch('quiz.views.send_mail', side_effect=OSError('smtp down')):
+            self.assertContains(self.register('ab4444@srmist.edu.in'), 'could not send the email')
+        self.assertContains(self.register('ab4444@srmist.edu.in'), 'Check your email')  # at once, with the mail server back
+        self.assertEqual([m.to for m in mail.outbox].count(['ab4444@srmist.edu.in']), 1)
+
+    def test_a_failed_reset_send_is_not_remembered_either(self):
+        self.finish_registration('ab5555@srmist.edu.in')  # an active account
+        before = len(mail.outbox)
+        with mock.patch('quiz.views.send_mail', side_effect=OSError('smtp down')):
+            self.client.post(reverse('password_reset'), {'email': 'ab5555@srmist.edu.in'})
+        self.client.post(reverse('password_reset'), {'email': 'ab5555@srmist.edu.in'})  # at once, with the mail server back
+        self.assertEqual(len(mail.outbox) - before, 1)
+
+    def test_the_forms_lock_their_button_after_the_first_click(self):
+        for page in (self.client.get(reverse('register')), self.client.get(reverse('login')),
+                     self.client.get(reverse('password_reset')), self.resend()):
+            self.assertContains(page, '<form method="post"', msg_prefix='the page has its form')
+            self.assertContains(page, ' data-once>')
+            self.assertContains(page, "form.hasAttribute('data-once')")  # the script in the base page that does the locking
 
     def test_a_resend_says_it_was_sent_again_the_same_way_for_every_address(self):
         self.register()
