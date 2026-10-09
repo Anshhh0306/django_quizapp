@@ -55,7 +55,9 @@ def _try_send_already_registered(request, email):
         return False
 
 # ponytail: 1000 an hour per address is far above one class; the real ceiling is the mail provider's daily limit.
-@rate_limit('register', 1000, 3600, field='email', field_limit=3)
+# A few an hour per MAILBOX (the second number) is what stops one inbox being flooded. It is not tight: a first email often
+# lands in Junk, so people press "send again" a few times before they look there.
+@rate_limit('register', 1000, 3600, field='email', field_limit=5)
 def register(request):
     """New address: make the account and email the verification link. Address that already has an account: email its
     owner instead. Either way the person sees the same page, so this form cannot be used to find out who has an account."""
@@ -102,16 +104,18 @@ def verify_email(request, uidb64, token):
         return response
     return render(request, 'quiz/verification_set_password.html', {'form': form})
 
-@rate_limit('resend', 1000, 3600, field='email', field_limit=5)
+@rate_limit('resend', 1000, 3600, field='email', field_limit=8)
 def resend_verification(request):
-    """Same page for every address, so this cannot be used to find out which ones are waiting for their link."""
+    """Same page for every address, so this cannot be used to find out which ones are waiting for their link.
+    The page says "just sent it again" (hedged: only if that address was waiting), because with no sign that the click did
+    anything people press the button again and again."""
     email = request.POST.get('email', '').strip() if request.method == 'POST' else ''
     if not email:
         return redirect('register')
     user = pending_account(email)
     if user:
         _try_send_verification(request, user)  # a mail problem is not shown: the page says "resend" again anyway
-    return render(request, 'quiz/verification_sent.html', {'email': email})
+    return render(request, 'quiz/verification_sent.html', {'email': email, 'again': True})
 
 def home(request):
     context = {}
@@ -129,7 +133,7 @@ def user_profile(request):
 from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.tokens import default_token_generator
 
-@rate_limit('pwreset', 1000, 3600, field='email', field_limit=5)
+@rate_limit('pwreset', 1000, 3600, field='email', field_limit=8)
 def custom_password_reset(request):
     """Sends a reset link to verified SRMIST accounts. The page shown is identical whether or not an email was
     sent, so it cannot be used to find out which addresses have accounts."""

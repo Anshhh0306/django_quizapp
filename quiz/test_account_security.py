@@ -197,11 +197,69 @@ class RegistrationRobustnessTests(AccountTestCase):
         self.assertEqual(r.status_code, 200)
 
     def test_one_inbox_cannot_be_flooded_but_a_class_can_register(self):
-        for _ in range(3):
+        for _ in range(5):
             self.assertEqual(self.register('victim1@srmist.edu.in').status_code, 200)
-        self.assertEqual(self.register('victim1@srmist.edu.in').status_code, 429)  # 3 an hour per address
+        self.assertEqual(self.register('victim1@srmist.edu.in').status_code, 429)  # 5 an hour per mailbox
         for i in range(60):  # 60 different students behind one campus address, in the same hour
             self.assertEqual(self.register(f'ab{1000 + i}@srmist.edu.in').status_code, 200)
+
+
+class FriendlyLimitTests(AccountTestCase):
+    """Reaching an email form's limit shows a page that says how long to wait and where the email probably is, never a bare line of text."""
+
+    def resend(self, email='qq5555@srmist.edu.in'):
+        return self.client.post(reverse('resend_verification'), {'email': email})
+
+    def test_the_refusal_is_a_proper_page_with_the_time_to_wait_and_the_junk_folder(self):
+        for _ in range(8):  # eight an hour per mailbox
+            self.assertEqual(self.resend().status_code, 200)
+        refused = self.resend()
+        self.assertEqual(refused.status_code, 429)
+        self.assertTemplateUsed(refused, 'quiz/rate_limited.html')
+        self.assertContains(refused, 'Junk or Spam', status_code=429)
+        self.assertContains(refused, 'minutes', status_code=429)
+        self.assertContains(refused, f'<a href="{reverse("login")}">Back to sign in</a>', status_code=429)  # a way out, not a dead end (the page header's own link would not prove it)
+        self.assertTrue(0 < int(refused['Retry-After']) <= 3600)
+
+    def test_the_page_counts_down_the_time_that_is_left(self):
+        for _ in range(8):
+            self.resend()
+        real = time.time
+        with mock.patch('time.time', lambda: real() + 1800):  # half an hour later the mailbox is still paused
+            refused = self.resend()
+        self.assertEqual(refused.status_code, 429)
+        self.assertContains(refused, '30 minutes', status_code=429)
+        self.assertTrue(1700 <= int(refused['Retry-After']) <= 1800)
+
+    def test_minutes_are_rounded_up_so_the_page_never_promises_too_early(self):
+        for _ in range(8):
+            self.resend()
+        real = time.time
+        with mock.patch('time.time', lambda: real() + 1810):  # 1790 seconds left is 29.8 minutes: say 30, not 29
+            self.assertContains(self.resend(), '<strong>30 minutes</strong>', status_code=429)
+        with mock.patch('time.time', lambda: real() + 3590):  # 10 seconds left: "1 minute", never "0 minutes" or "1 minutes"
+            self.assertContains(self.resend(), '<strong>1 minute</strong>', status_code=429)
+
+    def test_the_wait_is_the_whole_window_when_its_start_was_not_kept(self):
+        from quiz.ratelimit import bump, seconds_left
+        bump('rl:test:plain', 3600)  # a counter made without stamp=True (the catch-all caps are)
+        self.assertEqual(seconds_left('rl:test:plain', 3600), 3600)
+
+    def test_registering_and_password_reset_get_the_same_page(self):
+        for _ in range(5):
+            self.register('victim1@srmist.edu.in')
+        self.assertTemplateUsed(self.register('victim1@srmist.edu.in'), 'quiz/rate_limited.html')
+        for _ in range(8):
+            self.client.post(reverse('password_reset'), {'email': 'victim2@srmist.edu.in'})
+        refused = self.client.post(reverse('password_reset'), {'email': 'victim2@srmist.edu.in'})
+        self.assertEqual(refused.status_code, 429)
+        self.assertTemplateUsed(refused, 'quiz/rate_limited.html')
+
+    def test_a_resend_says_it_was_sent_again_the_same_way_for_every_address(self):
+        self.register()
+        for email in ('qq5555@srmist.edu.in', 'nobody@srmist.edu.in'):  # waiting, and not an account at all
+            self.assertContains(self.resend(email), "we've just sent it again")
+        self.assertNotContains(self.register('ab1111@srmist.edu.in'), 'just sent it again')  # only the resend page says it
 
 
 class LoginLockoutTests(AccountTestCase):

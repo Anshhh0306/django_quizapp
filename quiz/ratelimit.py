@@ -4,7 +4,8 @@ import time
 from functools import wraps
 
 from django.core.cache import cache
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
+from django.shortcuts import render
 
 from .util import client_ip
 
@@ -19,20 +20,37 @@ def key_part(text):
     return hashlib.sha256(text.encode('utf-8', 'replace')).hexdigest()[:32]
 
 
-def bump(key, window):
-    """Add one to a counter that expires `window` seconds after its first hit. Returns the new count."""
+def bump(key, window, stamp=False):
+    """Add one to a counter that expires `window` seconds after its first hit. Returns the new count.
+    With `stamp` the moment the window began is kept too, so a refusal can say how long is left (seconds_left)."""
     try:
         return cache.incr(key)
     except ValueError:  # first hit in this window
         cache.set(key, 1, window)
+        if stamp:
+            cache.set(f'{key}:began', time.time(), window)
         return 1
+
+
+def seconds_left(key, window):
+    """How long until the counter `key` (made with stamp=True) starts again; the whole window if its start was not kept."""
+    began = cache.get(f'{key}:began')
+    return max(1, math.ceil(window - (time.time() - began))) if began else window
+
+
+def too_many(request, seconds):
+    """What a person sees when a form's limit is reached: how long to wait and where the email probably is, not a bare line of text."""
+    response = render(request, 'quiz/rate_limited.html', {'minutes': math.ceil(seconds / 60)}, status=429)
+    response['Retry-After'] = str(seconds)
+    return response
 
 
 def rate_limit(name, limit, window, field=None, field_limit=None):
     """Cap POSTs to `limit` per `window` seconds per client IP, and (if `field`) `field_limit` per posted value.
 
     The per-value limit protects one mailbox from being flooded; the per-IP limit is looser so a whole class
-    behind one campus address is not locked out by a few mistakes."""
+    behind one campus address is not locked out by a few mistakes. A refusal is a page that says how long to wait
+    (written for the email forms, the only users of this so far)."""
     def decorator(view):
         @wraps(view)
         def wrapper(request, *args, **kwargs):
@@ -41,8 +59,8 @@ def rate_limit(name, limit, window, field=None, field_limit=None):
                 if field and request.POST.get(field):
                     keys.append((f'rl:{name}:{field}:{key_part(request.POST[field].strip().lower()[:254])}', field_limit or limit))
                 for key, cap in keys:
-                    if bump(key, window) > cap:
-                        return HttpResponse('Too many requests. Please try again later.', status=429)
+                    if bump(key, window, stamp=True) > cap:
+                        return too_many(request, seconds_left(key, window))
             return view(request, *args, **kwargs)
         return wrapper
     return decorator

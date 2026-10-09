@@ -127,9 +127,9 @@ class AccountFlowTests(TestCase):
         pending.set_unusable_password()  # a registration that has not chosen its password yet
         pending.save()
         codes = [self.client.post(reverse('resend_verification'), {'email': 'u2@srmist.edu.in'},
-                                  REMOTE_ADDR=f'10.0.0.{i}').status_code for i in range(7)]
-        self.assertEqual(codes, [200] * 5 + [429] * 2)  # different IPs, same target address
-        self.assertEqual(len(mail.outbox), 5)
+                                  REMOTE_ADDR=f'10.0.0.{i}').status_code for i in range(10)]
+        self.assertEqual(codes, [200] * 8 + [429] * 2)  # different IPs, same target address: 8 an hour per mailbox
+        self.assertEqual(len(mail.outbox), 8)
 
     def test_password_reset_is_rate_limited_per_ip(self):
         self.client.logout()

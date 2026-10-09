@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Please wait a little - QuizHub{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="auth-form-container stack">
+    <h1 class="h2">Please wait a little</h1>
+    <p>This was tried several times in a row, so it is paused for a while to keep the site safe. You can try again in about <strong>{{ minutes }} minute{{ minutes|pluralize }}</strong>.</p>
+
+    <div class="notice">
+      <h2 class="h3">Waiting for an email?</h2>
+      <ul>
+        <li>It has probably been sent already. Look in your <strong>Junk or Spam</strong> folder, and mark it "Not junk" if you find it there.</li>
+        <li>A first email from a new sender can take a few minutes to arrive.</li>
+      </ul>
+    </div>
+
+    <p><a href="{% url 'login' %}">Back to sign in</a></p>
+  </div>
+</div>
+{% endblock %}
