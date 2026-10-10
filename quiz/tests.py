@@ -1,3 +1,6 @@
+import time
+from unittest import mock
+
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
@@ -126,10 +129,14 @@ class AccountFlowTests(TestCase):
         pending = User.objects.create_user('u2', 'u2@srmist.edu.in', is_active=False)
         pending.set_unusable_password()  # a registration that has not chosen its password yet
         pending.save()
-        codes = [self.client.post(reverse('resend_verification'), {'email': 'u2@srmist.edu.in'},
-                                  REMOTE_ADDR=f'10.0.0.{i}').status_code for i in range(7)]
-        self.assertEqual(codes, [200] * 5 + [429] * 2)  # different IPs, same target address
-        self.assertEqual(len(mail.outbox), 5)
+        offset, real, codes = [0], time.time, []
+        with mock.patch('time.time', lambda: real() + offset[0]):
+            for i in range(10):
+                codes.append(self.client.post(reverse('resend_verification'), {'email': 'u2@srmist.edu.in'},
+                                              REMOTE_ADDR=f'10.0.0.{i}').status_code)
+                offset[0] += 61  # a minute apart: each is a new request (the same press repeated at once is free)
+        self.assertEqual(codes, [200] * 8 + [429] * 2)  # different IPs, same target address: 8 an hour per mailbox
+        self.assertEqual(len(mail.outbox), 8)
 
     def test_password_reset_is_rate_limited_per_ip(self):
         self.client.logout()

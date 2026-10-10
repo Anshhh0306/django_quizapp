@@ -4,7 +4,8 @@ import time
 from functools import wraps
 
 from django.core.cache import cache
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
+from django.shortcuts import render
 
 from .util import client_ip
 
@@ -19,30 +20,72 @@ def key_part(text):
     return hashlib.sha256(text.encode('utf-8', 'replace')).hexdigest()[:32]
 
 
-def bump(key, window):
-    """Add one to a counter that expires `window` seconds after its first hit. Returns the new count."""
+def bump(key, window, stamp=False):
+    """Add one to a counter that expires `window` seconds after its first hit. Returns the new count.
+    With `stamp` the moment the window began is kept too, so a refusal can say how long is left (seconds_left)."""
     try:
         return cache.incr(key)
     except ValueError:  # first hit in this window
         cache.set(key, 1, window)
+        if stamp:
+            cache.set(f'{key}:began', time.time(), window)
         return 1
 
 
-def rate_limit(name, limit, window, field=None, field_limit=None):
+def seconds_left(key, window):
+    """How long until the counter `key` (made with stamp=True) starts again; the whole window if its start was not kept."""
+    began = cache.get(f'{key}:began')
+    return max(1, math.ceil(window - (time.time() - began))) if began else window
+
+
+REPEAT_SECONDS = 60  # the same email button pressed again inside this time is the same request again, not a new one
+
+
+def _sent_key(kind, value):
+    return f'rl:sent:{kind}:{key_part(value.strip().lower()[:254])}'
+
+
+def recently_sent(kind, value):
+    """Did mail of this `kind` go to this address in the last minute? Used by rate_limit: such a repeat is free."""
+    return bool(value) and cache.get(_sent_key(kind, value)) is not None
+
+
+def claim_send(kind, value):
+    """True if this request should send the mail: nothing of this kind went to this address in the last minute. A student who
+    double-clicks, or presses "send it again" five times in a row, gets the same page and ONE email, and the repeats do not
+    use up the hourly limit. cache.add is atomic, so two clicks that arrive together cannot both send."""
+    return cache.add(_sent_key(kind, value), 1, REPEAT_SECONDS)
+
+
+def release_send(kind, value):
+    """The mail did not go out after all (the mail server failed): the next press must be allowed to try again."""
+    cache.delete(_sent_key(kind, value))
+
+
+def too_many(request, seconds):
+    """What a person sees when a form's limit is reached: how long to wait and where the email probably is, not a bare line of text."""
+    response = render(request, 'quiz/rate_limited.html', {'minutes': math.ceil(seconds / 60)}, status=429)
+    response['Retry-After'] = str(seconds)
+    return response
+
+
+def rate_limit(name, limit, window, field=None, field_limit=None, repeat=None):
     """Cap POSTs to `limit` per `window` seconds per client IP, and (if `field`) `field_limit` per posted value.
 
     The per-value limit protects one mailbox from being flooded; the per-IP limit is looser so a whole class
-    behind one campus address is not locked out by a few mistakes."""
+    behind one campus address is not locked out by a few mistakes. A refusal is a page that says how long to wait
+    (written for the email forms, the only users of this so far). With `repeat` (a mail kind, see claim_send) a press
+    for an address that was mailed in the last minute is not counted per value: mashing a button costs nothing."""
     def decorator(view):
         @wraps(view)
         def wrapper(request, *args, **kwargs):
             if request.method == 'POST':
                 keys = [(f'rl:{name}:ip:{client_ip(request)}', limit)]
-                if field and request.POST.get(field):
+                if field and request.POST.get(field) and not (repeat and recently_sent(repeat, request.POST[field])):
                     keys.append((f'rl:{name}:{field}:{key_part(request.POST[field].strip().lower()[:254])}', field_limit or limit))
                 for key, cap in keys:
-                    if bump(key, window) > cap:
-                        return HttpResponse('Too many requests. Please try again later.', status=429)
+                    if bump(key, window, stamp=True) > cap:
+                        return too_many(request, seconds_left(key, window))
             return view(request, *args, **kwargs)
         return wrapper
     return decorator

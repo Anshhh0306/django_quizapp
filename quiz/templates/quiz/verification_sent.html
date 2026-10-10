@@ -6,6 +6,9 @@
     <h1 class="h2">Check your email</h1>
     <p>If <strong>{{ email }}</strong> can be registered, we've sent it an email.</p>
     <p>Open it and click the link to activate your account. If you already had an account, the email tells you how to sign in.</p>
+    {% if again %}
+    <p class="notice"><strong>If that address was waiting for its link, we've just sent it again.</strong> Give it a few minutes, and look in your Junk or Spam folder, before asking again.</p>
+    {% endif %}
 
     <div class="notice">
       <h2 class="h3">Haven't received it?</h2>
@@ -14,7 +17,7 @@
         <li>Make sure the address above is right.</li>
         <li>Wait a few minutes. It can be slow.</li>
       </ul>
-      <form method="post" action="{% url 'resend_verification' %}">
+      <form method="post" action="{% url 'resend_verification' %}" data-once>
         {% csrf_token %}
         <input type="hidden" name="email" value="{{ email }}">
         <button type="submit" class="btn resend-btn">Send it again</button>

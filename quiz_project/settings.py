@@ -253,10 +253,11 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', f'SRM Quiz Platform <{
 if "test" in __import__("sys").argv:
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
-# Requests per minute: one network address (a whole campus can share one, so it is high) and one signed-in user (a
-# student in an exam makes about 10 a minute). Switched off under "manage.py test": the whole suite comes from one
-# address in about a minute. The tests that need it turn it on with small numbers.
-REQUEST_CAPS = {'address': 1200, 'user': 300}
+# Requests per minute: one network address and one signed-in user (a student in an exam makes about 10 a minute).
+# The address cap is high because a whole campus shares ONE public address: two classes of 50 measured about 950 a minute,
+# so the old 1200 would have cut off everyone behind the campus address from the third class on. Switched off under
+# "manage.py test": the whole suite comes from one address in about a minute. The tests that need it turn it on with small numbers.
+REQUEST_CAPS = {'address': 6000, 'user': 300}
 # The "someone is guessing your password" email is sent from a background thread (so the login page is not slowed down).
 LOCK_ALERT_BACKGROUND = True
 # Two-factor sign-in (see quiz/two_factor.py). These roles cannot use the site without it; anyone else may turn it on.

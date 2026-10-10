@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from .forms import RegisterForm, pending_account
-from .ratelimit import login_succeeded, rate_limit
+from .ratelimit import claim_send, login_succeeded, rate_limit, release_send
 from .two_factor import mark_browser_known
 from .exam_results import my_exam_cards
 from .roles import is_student, role_of
@@ -55,14 +55,19 @@ def _try_send_already_registered(request, email):
         return False
 
 # ponytail: 1000 an hour per address is far above one class; the real ceiling is the mail provider's daily limit.
-@rate_limit('register', 1000, 3600, field='email', field_limit=3)
+# A few an hour per MAILBOX (the second number) is what stops one inbox being flooded. It is not tight: a first email often
+# lands in Junk, so people press "send again" a few times before they look there.
+@rate_limit('register', 1000, 3600, field='email', field_limit=5, repeat='verify')
 def register(request):
     """New address: make the account and email the verification link. Address that already has an account: email its
-    owner instead. Either way the person sees the same page, so this form cannot be used to find out who has an account."""
+    owner instead. Either way the person sees the same page, so this form cannot be used to find out who has an account.
+    The button pressed again inside a minute (a double click, a nervous student) shows the same page and sends nothing more."""
     if request.method == 'POST':
         form = RegisterForm(request.POST)
         if form.is_valid():
             email, user = form.cleaned_data['email'], None
+            if not claim_send('verify', email):
+                return render(request, 'quiz/verification_sent.html', {'email': email})
             if not form.taken:
                 try:
                     with transaction.atomic():
@@ -72,6 +77,7 @@ def register(request):
             sent = _try_send_verification(request, user) if user else _try_send_already_registered(request, email)
             if sent:
                 return render(request, 'quiz/verification_sent.html', {'email': email})
+            release_send('verify', email)  # nothing went out: the next press must really try again
             form.add_error('email', 'We could not send the email right now. Please try again in a few minutes.')
     else:
         form = RegisterForm()
@@ -102,16 +108,20 @@ def verify_email(request, uidb64, token):
         return response
     return render(request, 'quiz/verification_set_password.html', {'form': form})
 
-@rate_limit('resend', 1000, 3600, field='email', field_limit=5)
+@rate_limit('resend', 1000, 3600, field='email', field_limit=8, repeat='verify')
 def resend_verification(request):
-    """Same page for every address, so this cannot be used to find out which ones are waiting for their link."""
+    """Same page for every address, so this cannot be used to find out which ones are waiting for their link.
+    The page says "just sent it again" (hedged: only if that address was waiting), because with no sign that the click did
+    anything people press the button again and again. Pressed again inside a minute of any verification email to that
+    address (this form's or the registration's), it sends nothing more and uses none of the hourly limit."""
     email = request.POST.get('email', '').strip() if request.method == 'POST' else ''
     if not email:
         return redirect('register')
-    user = pending_account(email)
-    if user:
-        _try_send_verification(request, user)  # a mail problem is not shown: the page says "resend" again anyway
-    return render(request, 'quiz/verification_sent.html', {'email': email})
+    if claim_send('verify', email):  # claimed for ANY address, waiting or not, so the page and the limits behave the same for all
+        user = pending_account(email)
+        if user and not _try_send_verification(request, user):  # a mail problem is not shown: the page says "resend" again anyway
+            release_send('verify', email)
+    return render(request, 'quiz/verification_sent.html', {'email': email, 'again': True})
 
 def home(request):
     context = {}
@@ -129,7 +139,7 @@ def user_profile(request):
 from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.tokens import default_token_generator
 
-@rate_limit('pwreset', 1000, 3600, field='email', field_limit=5)
+@rate_limit('pwreset', 1000, 3600, field='email', field_limit=8, repeat='pwreset')
 def custom_password_reset(request):
     """Sends a reset link to verified SRMIST accounts. The page shown is identical whether or not an email was
     sent, so it cannot be used to find out which addresses have accounts."""
@@ -137,7 +147,9 @@ def custom_password_reset(request):
         form = PasswordResetForm(request.POST)
         if form.is_valid():
             email = form.cleaned_data['email']
-            user = User.objects.filter(email__iexact=email, is_active=True).first()
+            # claimed for ANY address, with an account or not (so nothing here tells them apart); pressed again within a minute: one link is enough
+            claimed = claim_send('pwreset', email)
+            user = User.objects.filter(email__iexact=email, is_active=True).first() if claimed else None
             if user and user.email.lower().endswith('@srmist.edu.in'):
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
                 token = default_token_generator.make_token(user)
@@ -151,7 +163,7 @@ def custom_password_reset(request):
                     send_mail('Password Reset - SRMIST Quiz Platform', message, settings.DEFAULT_FROM_EMAIL,
                               [user.email], fail_silently=False)
                 except OSError:
-                    pass  # same page either way; the person can simply try again
+                    release_send('pwreset', email)  # same page either way; the next press tries again
             return render(request, 'quiz/password_reset_done.html', {'email': email})
     else:
         form = PasswordResetForm()

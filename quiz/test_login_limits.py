@@ -17,7 +17,7 @@ from django.utils.http import urlsafe_base64_encode
 
 from quiz.models import ExamAttempt
 from quiz.ratelimit import LOGIN_FREE_TRIES, LOGIN_LOCK_FIRST, LOGIN_MEMORY
-from quiz.test_account_security import PASSWORD, AccountTestCase
+from quiz.test_account_security import PASSWORD, AccountTestCase, FakeClock
 from quiz.test_anticheat import AntiCheatBase
 from quiz.test_exam_take import DESKTOP
 
@@ -28,12 +28,14 @@ def plain(response, email):
     return html.replace(email.lower(), '@').replace(email, '@')
 
 
-class RegistrationRevealsNothingTests(AccountTestCase):
+class RegistrationRevealsNothingTests(FakeClock, AccountTestCase):
     """The same page, whether the address is new, waiting for its link, already an account, or deactivated."""
 
     def setUp(self):
         super().setUp()
         self.finish_registration('ab1000@srmist.edu.in')  # an active account
+        self.start_clock()
+        self.wait(61)  # a minute on: pressed at once, the registration button would send nothing more (FriendlyLimitTests)
         User.objects.create_user('ab2000', 'ab2000@srmist.edu.in', PASSWORD, is_active=False)  # deactivated by a superadmin
         waiting = User(username='ab3000', email='ab3000@srmist.edu.in', is_active=False)
         waiting.set_unusable_password()
