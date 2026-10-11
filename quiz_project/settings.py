@@ -249,6 +249,13 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1',
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 10))
 
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', f'SRM Quiz Platform <{EMAIL_HOST_USER}>')
+# New and changed passwords use Argon2id (quiz/hashers.py: small settings, about 15 times cheaper per sign-in than Django's PBKDF2 default).
+# PBKDF2 stays in the list so every existing password still works; Django upgrades each one at its owner's next sign-in.
+PASSWORD_HASHERS = [
+    'quiz.hashers.SmallArgon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+]
+
 # Tests create many users; a fast hasher makes the suite several times quicker. Only active under "manage.py test".
 if "test" in __import__("sys").argv:
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
