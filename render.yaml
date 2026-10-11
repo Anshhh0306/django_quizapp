@@ -15,9 +15,10 @@ services:
         value: "False"
       - key: DJANGO_ASSUME_HTTPS
         value: "True"
-      # Trust no proxy header until the "How the site sees your address" panel (superadmin, Locked logins page) says which number is right.
+      # Measured on 2026-10-10 with the "How the site sees your address" panel (superadmin, Locked logins page): Cloudflare, Render's edge
+      # and Render's inner proxy each add one entry, so the visitor's address is the THIRD from the right.
       - key: DJANGO_TRUSTED_PROXY_COUNT
-        value: "0"
+        value: "3"
       # Render makes a random key itself: nobody ever sees or types it.
       - key: DJANGO_SECRET_KEY
         generateValue: true

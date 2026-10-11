@@ -51,7 +51,7 @@ class BlueprintTests(SimpleTestCase):
     def test_the_settings_are_the_ones_a_host_that_ends_https_needs(self):
         found = env_vars()
         self.assertEqual((found['DJANGO_DEBUG']['value'], found['DJANGO_ASSUME_HTTPS']['value']), ('False', 'True'))
-        self.assertEqual(found['DJANGO_TRUSTED_PROXY_COUNT']['value'], '0')  # nothing trusted until the address panel has been checked
+        self.assertEqual(found['DJANGO_TRUSTED_PROXY_COUNT']['value'], '3')  # measured with the address panel: Cloudflare + Render's edge + inner proxy
 
 
 class BuildScriptTests(SimpleTestCase):

@@ -60,12 +60,30 @@ class ClientIpTests(SimpleTestCase):
 
     @override_settings(TRUSTED_PROXY_COUNT=1)
     def test_anything_that_is_not_an_address_falls_back(self):
-        for bad in ('not-an-ip', '1.2.3.4:80', '<script>', 'x' * 300, '999.1.1.1', ',', ' '):
+        for bad in ('not-an-ip', '<script>', 'x' * 300, '999.1.1.1', ',', ' ',
+                    '1.2.3.4:', '1.2.3.4:abc', '1.2.3.4:99999', '1.2.3.4:123456', '1.2.3.4:80:80', ':80',  # a port must be 1 to 65535
+                    '[2001:db8::1', '[2001:db8::1]:', '[1.2.3.4]:80', '[12345::1]:80'):
             self.assertEqual(self.ip(bad), PROXY, repr(bad[:20]))
 
     @override_settings(TRUSTED_PROXY_COUNT=1)
     def test_an_ipv6_address_is_written_one_way(self):
         self.assertEqual(self.ip('2001:DB8:0:0:0:0:0:1'), '2001:db8::1')
+
+    @override_settings(TRUSTED_PROXY_COUNT=1)
+    def test_a_port_after_the_address_is_cut_off(self):
+        """Azure App Service writes the visitor as address:port ("203.0.113.9:56571", IPv6 as "[2001:db8::1]:56571")."""
+        self.assertEqual(self.ip('203.0.113.9:56571'), '203.0.113.9')
+        self.assertEqual(self.ip('[2001:DB8::1]:443'), '2001:db8::1')
+        self.assertEqual(self.ip('203.0.113.9:65535'), '203.0.113.9')
+
+    @override_settings(TRUSTED_PROXY_COUNT=1)
+    def test_a_port_does_not_let_the_visitor_pick_the_address(self):
+        """Only the entry our own proxy wrote counts, port or not: whatever is to its left is still ignored."""
+        self.assertEqual(self.ip('6.6.6.6:1, [2001:db8::6]:2, 203.0.113.9:56571'), '203.0.113.9')
+
+    @override_settings(TRUSTED_PROXY_COUNT=2)
+    def test_the_port_is_cut_off_the_entry_that_is_counted(self):
+        self.assertEqual(self.ip('6.6.6.6, 203.0.113.9:56571, 10.1.1.1:80'), '203.0.113.9')
 
     @override_settings(TRUSTED_PROXY_COUNT=1)
     def test_no_address_at_all_is_none(self):
