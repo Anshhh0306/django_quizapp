@@ -87,6 +87,8 @@ MIDDLEWARE = [
     'django_otp.middleware.OTPMiddleware',  # request.user.is_verified(): has this session passed the second step?
     'quiz.middleware.RequestCapMiddleware',  # catch-all cap per address and per signed-in user (REQUEST_CAPS)
     'quiz.middleware.TwoFactorGateMiddleware',  # a signed-in but unverified user can only reach the 2FA pages
+    'quiz.middleware.NoStoreForSignedInMiddleware',  # pages shown to a signed-in person are never cached (shared lab computers). AFTER the two above:
+    # a refused request (over its cap, sent to the 2FA pages) must not come back through it, or looking at the user would cost a database query
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'quiz.middleware.AdminAccessMiddleware',  # Custom middleware to protect admin interface
@@ -141,8 +143,12 @@ DATABASES['default'].setdefault('OPTIONS', {}).setdefault('connect_timeout', 10)
 # logins page) confirms. ASSUME_HTTPS = the host ends HTTPS itself and passes plain requests on (Zoho and Render: True).
 TRUSTED_PROXY_COUNT = int(os.environ.get('DJANGO_TRUSTED_PROXY_COUNT') or 0)
 ASSUME_HTTPS = os.environ.get('DJANGO_ASSUME_HTTPS', '').strip().lower() in ('true', '1', 't')
-if ASSUME_HTTPS:  # that host ends HTTPS and sends HSTS itself (Zoho does), so Django's own redirect and HSTS would only repeat it
-    SILENCED_SYSTEM_CHECKS = ['security.W004', 'security.W008']  # `check --deploy` warnings about exactly those two
+# HSTS tells a browser to use https only, for this many seconds, for this address. Off unless a host sets DJANGO_HSTS_SECONDS (a plain-http
+# local run would otherwise lock the browser out of its own address). A host that ends HTTPS itself but does NOT send HSTS (Azure App
+# Service does not) sets it, for example 31536000 (one year); Zoho sends its own, so there it stays off.
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_HSTS_SECONDS') or 0)
+if ASSUME_HTTPS:  # that host ends HTTPS (and may send HSTS itself, as Zoho does), so Django's own redirect would only repeat it
+    SILENCED_SYSTEM_CHECKS = ([] if SECURE_HSTS_SECONDS else ['security.W004']) + ['security.W008']  # `check --deploy` warnings: HSTS, redirect
 
 # Login locks and rate-limit counters live in this cache. Django's default keeps only 300 entries and silently
 # drops the oldest when full, which would drop a lock; this keeps plenty. ponytail: per process, so with several

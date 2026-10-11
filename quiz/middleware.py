@@ -5,6 +5,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.urls import resolve, reverse
+from django.utils.cache import add_never_cache_headers
 
 from . import two_factor
 from .ratelimit import bump
@@ -28,6 +29,21 @@ class AssumeHttpsMiddleware:
             if host.endswith(':443'):
                 request.META['HTTP_HOST'] = host[:-4]
         return self.get_response(request)
+
+
+class NoStoreForSignedInMiddleware:
+    """Whatever is shown to a signed-in person is kept out of the browser's cache and its Back/Forward store. In a computer lab the next
+    student must not see the last one's pages (profile, results, class lists) by pressing Back after they sign out. A page that
+    already chose its own Cache-Control keeps it; static files never come through here (WhiteNoise answers them earlier)."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if request.user.is_authenticated and 'Cache-Control' not in response.headers:
+            add_never_cache_headers(response)
+        return response
 
 
 class TwoFactorGateMiddleware:

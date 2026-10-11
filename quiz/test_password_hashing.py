@@ -86,6 +86,7 @@ class SigningInUpgradesTests(TestCase):
         self.assertEqual(self.sign_in().status_code, 302)
         self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
         self.assertTrue(self.stored().startswith(ARGON2_PREFIX))
+        self.assertEqual(self.client.get('/profile/').status_code, 200)  # storing the password again did not sign this very session out
         self.client.logout()
         self.assertEqual(self.sign_in().status_code, 302)  # and the upgraded password still works
         self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
