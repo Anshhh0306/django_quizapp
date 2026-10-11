@@ -13,6 +13,10 @@ segno==1.6.6
 psycopg[binary]==3.3.6
 dj-database-url==3.1.2
 
+# Password hashing: Argon2id (quiz/hashers.py); the second one is the small compiled part the first needs
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
+
 # The real server (gunicorn only runs on Linux hosts; it just sits unused on Windows) and its static-file helper
 gunicorn==26.2.0
 whitenoise==6.12.0

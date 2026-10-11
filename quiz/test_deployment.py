@@ -238,6 +238,11 @@ class ProductionSettingsTests(SimpleTestCase):
 
     def test_the_hosts_the_site_answers_to(self):
         self.assertEqual(self.settings_for().ALLOWED_HOSTS, ['quiz.example.com'])
+
+    def test_a_real_server_stores_new_passwords_with_small_argon2id_and_still_reads_pbkdf2(self):
+        """The suite itself runs on a fast fake hasher; a server must not."""
+        self.assertEqual(self.settings_for().PASSWORD_HASHERS,
+                         ['quiz.hashers.SmallArgon2PasswordHasher', 'django.contrib.auth.hashers.PBKDF2PasswordHasher'])
         # Render tells the site its own address while it runs; a visitor cannot send an environment variable
         self.assertEqual(self.settings_for(DJANGO_ALLOWED_HOSTS='', RENDER_EXTERNAL_HOSTNAME='quizhub.onrender.com').ALLOWED_HOSTS, ['quizhub.onrender.com'])
         both = self.settings_for(RENDER_EXTERNAL_HOSTNAME='quizhub.onrender.com').ALLOWED_HOSTS
